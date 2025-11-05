@@ -1,27 +1,55 @@
 import { useState } from "react";
-import { getProfile, getStats } from "./api/chessAPI";
+import PlayerInput from "./components/PlayerInput";
+import Ratings from "./components/Ratings";
+import PerformanceInsights from "./components/PerformanceInsights";
+import RecentRatingChange from "./components/RecentRatingChange";
+import WinLossPieChart from "./components/WinLossPieChart";
+import RatingTrendChart from "./components/RatingTrendChart";
+import { getProfile, getStats, getRatingHistory } from "./api/chessAPI";
+
+// Define the structure for rating history entries
+type RatingPoint = { month: string; rating: number };
 
 export default function App() {
+  // ---------- State ----------
   const [username, setUsername] = useState("");
   const [profile, setProfile] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
+  const [trendHistory, setTrendHistory] = useState<{
+    blitz: RatingPoint[];
+    rapid: RatingPoint[];
+    bullet: RatingPoint[];
+  }>({
+    blitz: [],
+    rapid: [],
+    bullet: [],
+  });
+
+  const [selectedTrendMode, setSelectedTrendMode] = useState<"blitz" | "rapid" | "bullet">("blitz");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<"blitz" | "rapid" | "bullet">("blitz");
 
+  // ---------- API Handlers ----------
   async function handleFetchAll() {
     if (!username.trim()) return;
     setLoading(true);
     setError(null);
-    setProfile(null);
-    setStats(null);
 
     try {
-      const [profileData, statsData] = await Promise.all([
+      const [profileData, statsData, blitzHistory] = await Promise.all([
         getProfile(username),
         getStats(username),
+        getRatingHistory(username, "blitz"),
       ]);
+
       setProfile(profileData);
       setStats(statsData);
+      setTrendHistory({
+        blitz: blitzHistory,
+        rapid: [],
+        bullet: [],
+      });
     } catch (err) {
       console.error(err);
       setError("Could not fetch data.");
@@ -30,6 +58,7 @@ export default function App() {
     }
   }
 
+  // ---------- Derived values ----------
   const avgRating =
     stats &&
     Math.round(
@@ -47,116 +76,135 @@ export default function App() {
       }).sort((a, b) => b[1] - a[1])[0][0]
     : null;
 
+  // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col items-center px-6 py-12">
-      {/* Header */}
-      <header className="w-full max-w-5xl text-center mb-10">
-        <h1 className="text-5xl font-extrabold text-[#00bfa6]">♟️ Chesslytics</h1>
-        <p className="text-gray-500 mt-2 text-lg">
-          Track performance, analyze stats, and visualize progress
-        </p>
-      </header>
+  <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col items-center px-6 py-12">
+    {/* ===== Header ===== */}
+    <header className="text-center mb-10">
+      <h1 className="text-5xl font-extrabold text-[#00bfa6] mb-2">♟️ Chesslytics</h1>
+      <p className="text-gray-500 text-lg">
+        Analyze your chess performance, trends, and insights
+      </p>
+    </header>
 
-      {/* Input */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 mb-10">
-        <input
-          type="text"
-          placeholder="Enter Chess.com username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="px-4 py-2 w-72 rounded-md border border-gray-300 text-gray-800 text-lg focus:outline-none focus:ring-2 focus:ring-[#00bfa6]"
-        />
-        <button
-          onClick={handleFetchAll}
-          className="bg-[#00bfa6] text-white font-semibold px-6 py-2 rounded-md hover:bg-[#00d6b5] transition"
-        >
-          Fetch Analytics
-        </button>
+    {/* ===== Player Input ===== */}
+    <PlayerInput
+      username={username}
+      setUsername={setUsername}
+      onFetch={handleFetchAll}
+      loading={loading}
+    />
+    {error && <p className="text-red-600 mt-3">{error}</p>}
+
+    {/* ===== Profile Summary ===== */}
+    {profile && (
+      <div className="mt-10 bg-white shadow-md rounded-xl p-6 w-full max-w-3xl flex flex-col items-center text-center">
+        {profile.avatar && (
+          <img
+            src={profile.avatar}
+            alt="avatar"
+            className="w-24 h-24 rounded-full mb-4 shadow"
+          />
+        )}
+        <h2 className="text-2xl font-semibold">{profile.username}</h2>
+        {profile.name && <p className="text-gray-500">{profile.name}</p>}
+        <p className="mt-2 text-gray-600">Friends: {profile.followers ?? 0}</p>
+      </div>
+    )}
+
+    {/* ===== Main Analytics Section ===== */}
+    {stats && (
+  <section className="w-full max-w-6xl mt-16 space-y-16">
+    {/* === Overview Section === */}
+    <div>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-2">
+        📊 Overview
+      </h2>
+
+      {/* ---- Summary Row ---- */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 text-center">
+        <div className="bg-white shadow-sm rounded-xl p-5">
+          <h4 className="text-sm text-gray-500 font-medium mb-1">Total Games</h4>
+          <p className="text-2xl font-bold text-gray-800">
+            {(stats.chess_blitz?.record?.win ?? 0) +
+              (stats.chess_blitz?.record?.loss ?? 0) +
+              (stats.chess_blitz?.record?.draw ?? 0) +
+              (stats.chess_rapid?.record?.win ?? 0) +
+              (stats.chess_rapid?.record?.loss ?? 0) +
+              (stats.chess_rapid?.record?.draw ?? 0) +
+              (stats.chess_bullet?.record?.win ?? 0) +
+              (stats.chess_bullet?.record?.loss ?? 0) +
+              (stats.chess_bullet?.record?.draw ?? 0)}
+          </p>
+        </div>
+
+        <div className="bg-white shadow-sm rounded-xl p-5">
+          <h4 className="text-sm text-gray-500 font-medium mb-1">Overall Win Rate</h4>
+          <p className="text-2xl font-bold text-[#00bfa6]">
+            {(() => {
+              const totalWins =
+                (stats.chess_blitz?.record?.win ?? 0) +
+                (stats.chess_rapid?.record?.win ?? 0) +
+                (stats.chess_bullet?.record?.win ?? 0);
+              const totalGames =
+                (stats.chess_blitz?.record?.win ?? 0) +
+                (stats.chess_blitz?.record?.loss ?? 0) +
+                (stats.chess_blitz?.record?.draw ?? 0) +
+                (stats.chess_rapid?.record?.win ?? 0) +
+                (stats.chess_rapid?.record?.loss ?? 0) +
+                (stats.chess_rapid?.record?.draw ?? 0) +
+                (stats.chess_bullet?.record?.win ?? 0) +
+                (stats.chess_bullet?.record?.loss ?? 0) +
+                (stats.chess_bullet?.record?.draw ?? 0);
+
+              return totalGames > 0
+                ? `${((totalWins / totalGames) * 100).toFixed(1)}%`
+                : "—";
+            })()}
+          </p>
+        </div>
+
+        <div className="bg-white shadow-sm rounded-xl p-5">
+          <h4 className="text-sm text-gray-500 font-medium mb-1">Best Format</h4>
+          <p className="text-2xl font-bold text-gray-800">
+            {bestMode ?? "—"}
+          </p>
+        </div>
       </div>
 
-      {loading && <p className="text-gray-500 animate-pulse">Loading...</p>}
-      {error && <p className="text-red-600">{error}</p>}
-
-      {/* Dashboard */}
-      {profile && stats && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-5xl">
-          {/* Ratings Overview */}
-          <section className="bg-white rounded-2xl shadow-md p-6 border border-gray-200">
-            <h2 className="text-2xl font-semibold text-[#00bfa6] mb-4">🎯 Ratings Overview</h2>
-            <ul className="space-y-2 text-lg">
-              <li>
-                Rapid:{" "}
-                <span className="font-mono font-semibold">
-                  {stats.chess_rapid?.last?.rating ?? "N/A"}
-                </span>
-              </li>
-              <li>
-                Blitz:{" "}
-                <span className="font-mono font-semibold">
-                  {stats.chess_blitz?.last?.rating ?? "N/A"}
-                </span>
-              </li>
-              <li>
-                Bullet:{" "}
-                <span className="font-mono font-semibold">
-                  {stats.chess_bullet?.last?.rating ?? "N/A"}
-                </span>
-              </li>
-              <li>
-                Puzzles:{" "}
-                <span className="font-mono font-semibold">
-                  {stats.tactics?.highest?.rating ?? "N/A"}
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          {/* Performance Summary */}
-          <section className="bg-white rounded-2xl shadow-md p-6 border border-gray-200">
-            <h2 className="text-2xl font-semibold text-[#00bfa6] mb-4">📈 Performance Insights</h2>
-            <ul className="space-y-2 text-lg">
-              <li>
-                Average Rating:{" "}
-                <span className="font-mono font-semibold">{avgRating || "N/A"}</span>
-              </li>
-              <li>
-                Best Mode:{" "}
-                <span className="font-semibold text-[#00bfa6]">{bestMode || "N/A"}</span>
-              </li>
-              <li>
-                Games Played (Blitz):{" "}
-                <span className="font-mono">
-                  {stats.chess_blitz?.record?.win +
-                    stats.chess_blitz?.record?.loss +
-                    stats.chess_blitz?.record?.draw || "N/A"}
-                </span>
-              </li>
-              <li>
-                Win Rate (Blitz):{" "}
-                <span className="font-mono">
-                  {stats.chess_blitz?.record
-                    ? Math.round(
-                        (stats.chess_blitz.record.win /
-                          (stats.chess_blitz.record.win +
-                            stats.chess_blitz.record.loss +
-                            stats.chess_blitz.record.draw)) *
-                          100
-                      ) + "%"
-                    : "N/A"}
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          {/* Recent Games (placeholder for now) */}
-          <section className="bg-white rounded-2xl shadow-md p-6 border border-gray-200">
-            <h2 className="text-2xl font-semibold text-[#00bfa6] mb-4">♟️ Recent Games</h2>
-            <p className="text-gray-500 italic">
-              Coming soon — we’ll pull the player’s latest games and show their results.
-            </p>
-          </section>
-        </div>
-      )}
+      {/* ---- Overview Cards ---- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <Ratings stats={stats} /> {/* → internally rename title: "Ratings Snapshot" */}
+        <PerformanceInsights
+          avgRating={avgRating}
+          bestMode={bestMode}
+        /> {/* → internally rename title: "Performance Highlights" */}
+  <RecentRatingChange username={username} /> {/* ⬅️ New version */}
+      </div>
     </div>
-  );
+
+    {/* === Analytics Section === */}
+    <div>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-2">
+        📈 Analytics
+      </h2>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+        <WinLossPieChart
+          stats={stats}
+          selectedMode={selectedMode}
+          setSelectedMode={setSelectedMode}
+        /> {/* → internally rename title: "Win / Loss Distribution" */}
+        <RatingTrendChart
+          trendData={trendHistory[selectedTrendMode]}
+          selectedTrendMode={selectedTrendMode}
+          setSelectedTrendMode={setSelectedTrendMode}
+        /> {/* → internally rename title: "Rating Progress Over Time" */}
+      </div>
+    </div>
+  </section>
+)}
+
+  </div>
+);
 }

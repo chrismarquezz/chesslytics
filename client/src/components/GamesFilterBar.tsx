@@ -35,22 +35,6 @@ export default function GamesFilterBar({
             </button>
           ))}
         </div>
-
-        <div className="flex gap-2 ml-4">
-          {results.map((result) => (
-            <button
-              key={result}
-              onClick={() => setSelectedResult(result)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium border transition ${
-                selectedResult === result
-                  ? "bg-[#00bfa6] text-white border-[#00bfa6]"
-                  : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-              }`}
-            >
-              {result.charAt(0).toUpperCase() + result.slice(1)}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Right side – refresh */}

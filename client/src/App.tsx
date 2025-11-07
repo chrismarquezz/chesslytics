@@ -3,19 +3,18 @@ import { useUser } from "./context/UserContext";
 import Navbar from "./components/Navbar";
 import PlayerInput from "./components/PlayerInput";
 import Ratings from "./components/Ratings";
-import PerformanceInsights from "./components/PerformanceInsights";
 import RecentRatingChange from "./components/RecentRatingChange";
 import WinLossPieChart from "./components/WinLossPieChart";
 import RatingTrendChart from "./components/RatingTrendChart";
+import HighlightsSection from "./components/HighlightsSection";
+import BestRatings from "./components/BestRatings";
 import { getProfile, getStats, getRatingHistory } from "./api/chessAPI";
 
-// Type for rating history points
 type RatingPoint = { month: string; rating: number };
 
 export default function App() {
   const { username, setUsername } = useUser();
 
-  // Local state for fetched data
   const [profile, setProfile] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
   const [trendHistory, setTrendHistory] = useState<{
@@ -23,45 +22,43 @@ export default function App() {
     rapid: RatingPoint[];
     bullet: RatingPoint[];
   }>({ blitz: [], rapid: [], bullet: [] });
-
-  const [selectedTrendMode, setSelectedTrendMode] = useState<"blitz" | "rapid" | "bullet">("blitz");
-  const [selectedMode, setSelectedMode] = useState<"blitz" | "rapid" | "bullet">("blitz");
+  const [selectedMode, setSelectedMode] = useState<"all" | "blitz" | "rapid" | "bullet">("blitz");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [games] = useState<any[]>([]);
 
-  // Fetch all profile + stats + history
-  async function handleFetchAll() {
-    if (!username.trim()) return;
-    setLoading(true);
-    setError(null);
+  // === Fetch all profile + stats + rating histories ===
+async function handleFetchAll() {
+  if (!username.trim()) return;
+  setLoading(true);
+  setError(null);
 
-    try {
-      const [profileData, statsData, blitzHistory] = await Promise.all([
-        getProfile(username),
-        getStats(username),
-        getRatingHistory(username, "blitz"),
-      ]);
+  try {
+    // Fetch profile, stats, and rating histories in parallel
+    const [profileData, statsData, blitzHistory, rapidHistory, bulletHistory] = await Promise.all([
+      getProfile(username),
+      getStats(username),
+      getRatingHistory(username, "blitz"),
+      getRatingHistory(username, "rapid"),
+      getRatingHistory(username, "bullet"),
+    ]);
 
-      setProfile(profileData);
-      setStats(statsData);
-      setTrendHistory({ blitz: blitzHistory, rapid: [], bullet: [] });
-    } catch (err) {
-      console.error(err);
-      setError("Could not fetch data.");
-    } finally {
-      setLoading(false);
-    }
+    // Update state
+    setProfile(profileData);
+    setStats(statsData);
+    setTrendHistory({
+      blitz: blitzHistory,
+      rapid: rapidHistory,
+      bullet: bulletHistory,
+    });
+  } catch (err) {
+    console.error("Error fetching player data:", err);
+    setError("Could not fetch data. Please try again.");
+  } finally {
+    setLoading(false);
   }
+}
 
-  // Derived metrics
-  const avgRating =
-    stats &&
-    Math.round(
-      (stats.chess_rapid?.last?.rating +
-        stats.chess_blitz?.last?.rating +
-        stats.chess_bullet?.last?.rating) /
-        3
-    );
 
   const bestMode = stats
     ? Object.entries({
@@ -71,13 +68,10 @@ export default function App() {
       }).sort((a, b) => b[1] - a[1])[0][0]
     : null;
 
-  // Render
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col items-center px-6 py-12 pt-24">
-      {/* Navbar */}
       <Navbar />
 
-      {/* Header */}
       <header className="text-center mb-10">
         <h1 className="text-5xl font-extrabold text-[#00bfa6] mb-2">
           ♟️ Chesslytics Dashboard
@@ -87,7 +81,6 @@ export default function App() {
         </p>
       </header>
 
-      {/* Username input */}
       <PlayerInput
         username={username}
         setUsername={setUsername}
@@ -96,7 +89,6 @@ export default function App() {
       />
       {error && <p className="text-red-600 mt-3">{error}</p>}
 
-      {/* Profile summary */}
       {profile && (
         <div className="mt-10 bg-white shadow-md rounded-xl p-6 w-full max-w-3xl flex flex-col items-center text-center">
           {profile.avatar && (
@@ -112,16 +104,15 @@ export default function App() {
         </div>
       )}
 
-      {/* Stats + Charts */}
       {stats && (
         <section className="w-full max-w-6xl mt-16 space-y-16">
-          {/* Overview Section */}
+          {/* === Overview Section === */}
           <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-2">
-              Ratings Overview
+              Overview
             </h2>
 
-            {/* Summary row */}
+            {/* --- Summary row --- */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 text-center">
               <div className="bg-white shadow-sm rounded-xl p-5">
                 <h4 className="text-sm text-gray-500 font-medium mb-1">Total Games</h4>
@@ -171,33 +162,50 @@ export default function App() {
               </div>
             </div>
 
-            {/* Overview Cards */}
+            {/* --- Overview Cards --- */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <Ratings stats={stats} />
-              <PerformanceInsights avgRating={avgRating} bestMode={bestMode} />
-              <RecentRatingChange username={username} />
+              <BestRatings stats={stats} />
+              <RecentRatingChange username={username}/>
             </div>
           </div>
 
-          {/* Analytics Section */}
+          {/* === Analytics Section === */}
           <div>
-            <h2 className="text-3xl font-bold text-gray-800 mb-6 border-b border-gray-200 pb-2">
-              Analytics
-            </h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold text-gray-800 border-b border-gray-200 pb-2">
+                Analytics
+              </h2>
+
+              {/* Mode selector */}
+              <div className="flex gap-2">
+                {["all", "bullet", "blitz", "rapid"].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setSelectedMode(mode as "all" | "bullet" | "blitz" | "rapid")}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      selectedMode === mode
+                        ? "bg-[#00bfa6] text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
-              <WinLossPieChart
-                stats={stats}
-                selectedMode={selectedMode}
-                setSelectedMode={setSelectedMode}
-              />
+              <WinLossPieChart stats={stats} selectedMode={selectedMode} />
               <RatingTrendChart
-                trendData={trendHistory[selectedTrendMode]}
-                selectedMode={selectedTrendMode}
-                setSelectedMode={setSelectedTrendMode}
+                trendData={trendHistory[selectedMode === "all" ? "blitz" : selectedMode] || []}
+                selectedMode={selectedMode}
               />
             </div>
           </div>
+
+          {/* === Highlights Section === */}
+          <HighlightsSection username={username} games={games} />
         </section>
       )}
     </div>

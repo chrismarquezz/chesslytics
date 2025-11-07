@@ -1,87 +1,77 @@
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from "recharts";
 
 interface WinLossPieChartProps {
   stats: any;
-  selectedMode: "blitz" | "rapid" | "bullet";
-  setSelectedMode: (mode: "blitz" | "rapid" | "bullet") => void;
+  selectedMode: "all" | "bullet" | "blitz" | "rapid";
 }
 
-export default function WinLossPieChart({
-  stats,
-  selectedMode,
-  setSelectedMode,
-}: WinLossPieChartProps) {
-  const modeData =
-    stats && stats[`chess_${selectedMode}`]?.record
-      ? [
-          { name: "Wins", value: stats[`chess_${selectedMode}`].record.win || 0 },
-          { name: "Losses", value: stats[`chess_${selectedMode}`].record.loss || 0 },
-          { name: "Draws", value: stats[`chess_${selectedMode}`].record.draw || 0 },
-        ]
-      : [];
+export default function WinLossPieChart({ stats, selectedMode }: WinLossPieChartProps) {
+  const data = (() => {
+    if (selectedMode === "all") {
+      const total = ["chess_bullet", "chess_blitz", "chess_rapid"].map(
+        (m) => stats[m]?.record ?? { win: 0, loss: 0, draw: 0 }
+      );
+      return {
+        win: total.reduce((s, r) => s + (r.win ?? 0), 0),
+        loss: total.reduce((s, r) => s + (r.loss ?? 0), 0),
+        draw: total.reduce((s, r) => s + (r.draw ?? 0), 0),
+      };
+    }
+    const modeKey = `chess_${selectedMode}`;
+    return stats[modeKey]?.record ?? { win: 0, loss: 0, draw: 0 };
+  })();
 
-  const totalGames = modeData.reduce((acc, cur) => acc + cur.value, 0);
-  const COLORS = ["#00bfa6", "#f87171", "#facc15"]; // green, red, yellow
+  const chartData = [
+    { name: "Wins", value: data.win, color: "#00bfa6" },
+    { name: "Losses", value: data.loss, color: "#ef4444" },
+    { name: "Draws", value: data.draw, color: "#9ca3af" },
+  ];
+
+  const totalGames = data.win + data.loss + data.draw;
+  const getPercent = (val: number) =>
+    totalGames ? ((val / totalGames) * 100).toFixed(1) + "%" : "0%";
 
   return (
-    <section className="bg-white rounded-2xl shadow-md p-6 border border-gray-200">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-semibold">
-          Win/Loss/Draw Ratio
-        </h2>
-        <select
-          value={selectedMode}
-          onChange={(e) =>
-            setSelectedMode(e.target.value as "blitz" | "rapid" | "bullet")
-          }
-          className="border border-gray-300 rounded-md px-2 py-1 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#00bfa6]"
-        >
-          <option value="blitz">Blitz</option>
-          <option value="rapid">Rapid</option>
-          <option value="bullet">Bullet</option>
-        </select>
-      </div>
+    <section className="bg-white shadow-md rounded-2xl p-6 border border-gray-200">
+      <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
+        Win / Loss Distribution
+      </h3>
 
-      <ResponsiveContainer width="100%" height={320}>
-        <PieChart>
-          <Pie
-            data={modeData}
-            cx="50%"
-            cy="50%"
-            outerRadius={90}
-            dataKey="value"
-            labelLine={false}
-            label={(entry: any) =>
-              totalGames
-                ? `${entry.name}: ${((Number(entry.value) / totalGames) * 100).toFixed(1)}%`
-                : `${entry.name}: 0%`
-            }
-          >
-            {modeData.map((_, index) => (
-              <Cell key={index} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-            }}
-          />
-          <Legend
-            verticalAlign="bottom"
-            align="center"
-            wrapperStyle={{ paddingTop: "32px" }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+      {totalGames === 0 ? (
+        <p className="text-gray-500 text-center mt-10">No data available</p>
+      ) : (
+        <div className="flex flex-col items-center">
+          <div className="w-full h-80">
+            <ResponsiveContainer>
+              <ResponsiveContainer>
+  <PieChart>
+    <Pie
+      data={chartData}
+      cx="50%"
+      cy="50%"
+      labelLine={false}
+      outerRadius={110}
+      dataKey="value"
+      label={({ name, value }) => `${name} (${getPercent(value as number)})`} // ✅ fix here
+    >
+      {chartData.map((entry, index) => (
+        <Cell key={`cell-${index}`} fill={entry.color} />
+      ))}
+    </Pie>
+    <Tooltip formatter={(val: number | string) => `${val} games`} />
+    <Legend
+      verticalAlign="bottom"
+      align="center"
+      iconType="circle"
+      wrapperStyle={{ paddingTop: 20 }}
+    />
+  </PieChart>
+</ResponsiveContainer>
+
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

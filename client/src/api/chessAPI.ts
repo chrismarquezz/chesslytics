@@ -15,21 +15,37 @@ export async function getStats(username: string) {
 }
 
 export async function getRecentGames(username: string) {
+  const now = new Date();
+  const thisMonth = now.toISOString().slice(0, 7).split("-");
+  const prevMonth = new Date(now);
+  prevMonth.setMonth(now.getMonth() - 1);
+  const prev = prevMonth.toISOString().slice(0, 7).split("-");
+
+  const urls = [
+    `https://api.chess.com/pub/player/${username}/games/${thisMonth[0]}/${thisMonth[1]}`,
+    `https://api.chess.com/pub/player/${username}/games/${prev[0]}/${prev[1]}`
+  ];
+
   try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const responses = await Promise.all(
+      urls.map((url) =>
+        axios.get(url).then((r) => r.data.games || []).catch(() => [])
+      )
+    );
 
-    const url = `https://api.chess.com/pub/player/${username}/games/${year}/${month}`;
-    const { data } = await axios.get(url);
+    // Merge and sort descending by end_time
+    const merged = [...responses[0], ...responses[1]].sort(
+      (a, b) => b.end_time - a.end_time
+    );
 
-    // Return only the most recent 20 games
-    return data.games.slice(-20).reverse();
-  } catch (error) {
-    console.error("Error fetching recent games:", error);
+    // Limit to last 100 for performance but you can tweak this
+    return merged.slice(0, 100);
+  } catch (err) {
+    console.error("Error fetching recent games:", err);
     return [];
   }
 }
+
 
 
 export async function getRatingHistory(username: string, mode: "blitz" | "rapid" | "bullet" = "blitz") {

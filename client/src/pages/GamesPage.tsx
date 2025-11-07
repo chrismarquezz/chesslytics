@@ -6,6 +6,8 @@ import GameStatsSummary from "../components/GameStatsSummary";
 import GamesFilterBar from "../components/GamesFilterBar";
 import RecentGamesTable from "../components/RecentGamesTable";
 import { getUserOutcome } from "../utils/result";
+import PerformanceByColorChart from "../components/PerformanceByColorChart";
+import PerformanceByTimeChart from "../components/PerformanceByTimeChart";
 
 export default function GamesPage() {
   const { username } = useUser();
@@ -73,20 +75,6 @@ export default function GamesPage() {
     else break;
   }
 
-  // --- Format "last updated" time ago ---
-  const timeAgo = lastUpdated
-    ? (() => {
-        const diffMs = Date.now() - lastUpdated.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        if (diffMins < 1) return "just now";
-        if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
-        const diffHrs = Math.floor(diffMins / 60);
-        if (diffHrs < 24) return `${diffHrs} hour${diffHrs > 1 ? "s" : ""} ago`;
-        const diffDays = Math.floor(diffHrs / 24);
-        return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-      })()
-    : null;
-
   return (
     <>
       <Navbar />
@@ -115,6 +103,11 @@ export default function GamesPage() {
             avgOpponent={avgOpponent}
             currentStreak={currentStreak}
           />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+  <PerformanceByColorChart games={filteredGames} username={username} />
+  <PerformanceByTimeChart games={filteredGames} username={username} />
+</div>
 
           {/* Table */}
           {loading ? (

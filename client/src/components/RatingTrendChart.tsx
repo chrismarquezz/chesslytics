@@ -3,75 +3,48 @@ import {
   Line,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
-type RatingPoint = {
-  month: string;
-  rating: number;
-};
-
-type RatingTrendChartProps = {
-  trendData: RatingPoint[];
-  selectedTrendMode: "blitz" | "rapid" | "bullet";
-  setSelectedTrendMode: React.Dispatch<
-    React.SetStateAction<"blitz" | "rapid" | "bullet">
-  >;
-};
+interface RatingTrendChartProps {
+  trendData: { month: string; rating: number }[];
+  selectedMode: "all" | "bullet" | "blitz" | "rapid";
+}
 
 export default function RatingTrendChart({
   trendData,
-  selectedTrendMode,
-  setSelectedTrendMode,
 }: RatingTrendChartProps) {
   return (
-    <div className="bg-white shadow-md rounded-xl p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-2xl font-semibold text-gray-800">
-          Rating Trend ({selectedTrendMode})
-        </h3>
+    <section className="bg-white shadow-md hover:shadow-lg transition-shadow duration-300 rounded-2xl p-6 border border-gray-200">
+      <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
+        Rating Trend
+      </h3>
 
-        <select
-          value={selectedTrendMode}
-          onChange={(e) =>
-            setSelectedTrendMode(e.target.value as "blitz" | "rapid" | "bullet")
-          }
-          className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-[#00bfa6] focus:outline-none"
-        >
-          <option value="blitz">Blitz</option>
-          <option value="rapid">Rapid</option>
-          <option value="bullet">Bullet</option>
-        </select>
-      </div>
-
-      {trendData && trendData.length > 0 ? (
+      {trendData.length === 0 ? (
+        <p className="text-gray-500 text-center py-10">No trend data available</p>
+      ) : (
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={trendData}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
-            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-            <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+            <XAxis dataKey="month" tick={{ fill: "#555" }} />
+            <YAxis tick={{ fill: "#555" }} domain={["auto", "auto"]} />
             <Tooltip
-              contentStyle={{
-                backgroundColor: "#ffffff",
-                borderRadius: "8px",
-                border: "1px solid #ddd",
-              }}
+              formatter={(value: number) => `${value} rating`}
+              labelStyle={{ color: "#111" }}
             />
             <Line
               type="monotone"
               dataKey="rating"
               stroke="#00bfa6"
               strokeWidth={3}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
+              dot={{ r: 4 }}
+              activeDot={{ r: 6 }}
             />
           </LineChart>
         </ResponsiveContainer>
-      ) : (
-        <p className="text-gray-500 text-center">No rating data available</p>
       )}
-    </div>
+    </section>
   );
 }

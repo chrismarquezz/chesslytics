@@ -42,32 +42,29 @@ export default function WinLossPieChart({ stats, selectedMode }: WinLossPieChart
       ) : (
         <div className="flex flex-col items-center">
           <div className="w-full h-80">
-            <ResponsiveContainer>
-              <ResponsiveContainer>
-  <PieChart>
-    <Pie
-      data={chartData}
-      cx="50%"
-      cy="50%"
-      labelLine={false}
-      outerRadius={110}
-      dataKey="value"
-      label={({ name, value }) => `${name} (${getPercent(value as number)})`} // ✅ fix here
-    >
-      {chartData.map((entry, index) => (
-        <Cell key={`cell-${index}`} fill={entry.color} />
-      ))}
-    </Pie>
-    <Tooltip formatter={(val: number | string) => `${val} games`} />
-    <Legend
-      verticalAlign="bottom"
-      align="center"
-      iconType="circle"
-      wrapperStyle={{ paddingTop: 20 }}
-    />
-  </PieChart>
-</ResponsiveContainer>
-
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart margin={{ top: 12, right: 36, bottom: 12, left: 36 }}>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="48%"
+                  labelLine={false}
+                  outerRadius={100}
+                  dataKey="value"
+                  label={({ name, value }) => `${name} (${getPercent(value as number)})`}
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(val: number | string) => `${val} games`} />
+                <Legend
+                  verticalAlign="bottom"
+                  align="center"
+                  iconType="circle"
+                  wrapperStyle={{ paddingTop: 20 }}
+                />
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>

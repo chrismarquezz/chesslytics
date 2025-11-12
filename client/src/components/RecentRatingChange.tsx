@@ -70,23 +70,19 @@ export default function RecentRatingChange({ username }: RecentRatingChangeProps
       {gamesLoading ? (
         <p className="text-gray-500 animate-pulse">Loading...</p>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-4">
           {modes.map((mode) => {
             const delta = deltas[mode] ?? 0;
-            const isPositive = delta >= 0;
+            const { valueClasses } = getDeltaStyle(delta);
             return (
               <div
                 key={mode}
-                className="flex justify-between items-center border-b border-gray-100 pb-2"
+                className="rounded-xl border border-gray-100 bg-gray-50 px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
               >
-                <span className="capitalize font-medium text-gray-700">{mode}</span>
-                <span
-                  className={`font-semibold ${
-                    isPositive ? "text-[#00bfa6]" : "text-red-500"
-                  }`}
-                >
-                  {isPositive ? "▲" : "▼"} {Math.abs(delta)} pts
-                </span>
+                <p className="text-2xl font-bold text-gray-700 capitalize">{mode}</p>
+                <p className={`text-3xl font-bold ${valueClasses}`}>
+                  {formatDelta(delta)}
+                </p>
               </div>
             );
           })}
@@ -96,4 +92,20 @@ export default function RecentRatingChange({ username }: RecentRatingChangeProps
       <p className="text-sm text-gray-500 mt-3">Compared to ratings from 7 days ago</p>
     </section>
   );
+}
+
+function formatDelta(delta: number) {
+  if (delta === 0) return "0 pts";
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta} pts`;
+}
+
+function getDeltaStyle(delta: number) {
+  if (delta > 0) {
+    return { valueClasses: "text-[#00bfa6]" };
+  }
+  if (delta < 0) {
+    return { valueClasses: "text-red-500" };
+  }
+  return { valueClasses: "text-gray-400" };
 }

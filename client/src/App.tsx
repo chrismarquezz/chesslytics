@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "./context/UserContext";
 import Navbar from "./components/Navbar";
 import PlayerInput from "./components/PlayerInput";
@@ -7,12 +7,14 @@ import RecentRatingChange from "./components/RecentRatingChange";
 import WinLossPieChart from "./components/WinLossPieChart";
 import RatingTrendChart from "./components/RatingTrendChart";
 import HighlightsSection from "./components/HighlightsSection";
-import BestRatings from "./components/BestRatings";
+import ActivityTracker from "./components/ActivityTracker";
 
 export default function App() {
   const {
     username,
     setUsername,
+    games,
+    gamesLoading,
     profile,
     stats,
     trendHistory,
@@ -21,6 +23,18 @@ export default function App() {
     fetchUserData,
   } = useUser();
   const [selectedMode, setSelectedMode] = useState<"all" | "blitz" | "rapid" | "bullet">("blitz");
+  const [pendingUsername, setPendingUsername] = useState(username);
+
+  useEffect(() => {
+    setPendingUsername(username);
+  }, [username]);
+
+  const handleFetch = () => {
+    const target = pendingUsername.trim();
+    if (!target) return;
+    setUsername(target);
+    void fetchUserData(target);
+  };
 
   const bestMode = stats
     ? Object.entries({
@@ -44,9 +58,9 @@ export default function App() {
       </header>
 
       <PlayerInput
-        username={username}
-        setUsername={setUsername}
-        onFetch={() => fetchUserData()}
+        username={pendingUsername}
+        setUsername={setPendingUsername}
+        onFetch={handleFetch}
         loading={userDataLoading}
       />
       {userDataError && <p className="text-red-600 mt-3">{userDataError}</p>}
@@ -127,8 +141,8 @@ export default function App() {
             {/* --- Overview Cards --- */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <Ratings stats={stats} />
-              <BestRatings stats={stats} />
-              <RecentRatingChange username={username}/>
+              <ActivityTracker games={games} gamesLoading={gamesLoading} />
+              <RecentRatingChange username={username} />
             </div>
           </div>
 

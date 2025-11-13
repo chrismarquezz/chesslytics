@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import Navbar from "../components/Navbar";
 import GameInputCard from "../components/review/GameInputCard";
@@ -81,7 +81,7 @@ export default function ReviewPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
-  const [boardSize, setBoardSize] = useState(520);
+  const [boardSize, setBoardSize] = useState(640);
   const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
   const [boardTheme, setBoardTheme] = useState<BoardThemeKey>(() => {
     if (typeof window !== "undefined") {
@@ -95,6 +95,7 @@ export default function ReviewPage() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [reviewedPlies, setReviewedPlies] = useState<Set<number>>(() => new Set());
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [showBestMoveArrow, setShowBestMoveArrow] = useState(true);
   const controlBtnClasses =
     "px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40";
 
@@ -104,7 +105,7 @@ export default function ReviewPage() {
     const resizeBoard = () => {
       if (typeof window === "undefined") return;
       const width = window.innerWidth;
-      setBoardSize(Math.max(300, Math.min(520, width - 80)));
+      setBoardSize(Math.max(360, Math.min(720, width - 160)));
     };
     resizeBoard();
     window.addEventListener("resize", resizeBoard);
@@ -166,17 +167,17 @@ export default function ReviewPage() {
   const currentMove = currentMoveIndex >= 0 ? timeline[currentMoveIndex] : null;
   const currentEval = currentMove ? moveEvaluations[currentMove.ply] : null;
 
+  const bestMoveArrows = useMemo(() => {
+    if (!showBestMoveArrow) return [] as Array<[Square, Square]>;
+    if (currentEval?.status !== "success") return [];
+    const arrow = getArrowFromBestMove(currentEval.evaluation.bestMove);
+    return arrow ? [arrow] : [];
+  }, [showBestMoveArrow, currentEval]);
+
   const summaryCards = buildSummaryCards(analysisSummary, timeline.length, currentMoveIndex + 1);
 
   const handleLoadSample = () => {
     setPgnInput(SAMPLE_PGN.trim());
-    try {
-      bootstrapTimeline(buildTimelineFromPgn(SAMPLE_PGN), true);
-      setAnalysisSummary(null);
-      setAnalysisError(null);
-    } catch (err: any) {
-      setInputError(err.message || "Failed to parse sample PGN");
-    }
   };
 
   const bootstrapTimeline = (moves: MoveSnapshot[], autoEvaluateFirst = false) => {
@@ -204,11 +205,13 @@ export default function ReviewPage() {
     setInputError(null);
     setAnalysisError(null);
     setAnalysisSummary(null);
+    setTimeline([]);
+    setMoveEvaluations({});
+    setReviewedPlies(new Set());
 
     let parsedMoves: MoveSnapshot[] = [];
     try {
       parsedMoves = buildTimelineFromPgn(pgnInput);
-      bootstrapTimeline(parsedMoves, true);
     } catch (err: any) {
       setInputError(err.message || "Invalid PGN");
       return;
@@ -235,7 +238,8 @@ export default function ReviewPage() {
         throw new Error("error" in payload ? payload.error : "Failed to analyze game");
       }
 
-      setTimeline(payload.timeline ?? parsedMoves);
+      const timelineResult = payload.timeline ?? parsedMoves;
+      bootstrapTimeline(timelineResult, true);
       setAnalysisSummary(payload.summary);
       setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
     } catch (err: any) {
@@ -361,22 +365,8 @@ export default function ReviewPage() {
           </section>
 
           {/* Interactive board & move list */}
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-semibold text-gray-800">Interactive Board</h2>
-                  <span className="text-sm text-gray-500">
-                    {currentMoveIndex >= 0 ? `Move ${timeline[currentMoveIndex]?.moveNumber}` : "Start position"}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsThemeModalOpen(true)}
-                  className="px-3 py-1 rounded-full border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
-                >
-                  Change Theme
-                </button>
-              </div>
+          <section className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8">
+            <div className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
               <div className="flex justify-center">
                 <Chessboard
                   position={boardPosition}
@@ -385,7 +375,8 @@ export default function ReviewPage() {
                   arePiecesDraggable={false}
                   customDarkSquareStyle={{ backgroundColor: BOARD_THEMES[boardTheme].dark }}
                   customLightSquareStyle={{ backgroundColor: BOARD_THEMES[boardTheme].light }}
-                  customBoardStyle={{ borderRadius: "1.5rem" }}
+                  customBoardStyle={{ borderRadius: 0 }}
+                  customArrows={bestMoveArrows}
                 />
               </div>
               <div className="flex flex-wrap gap-3 justify-between items-center border-t border-gray-100 pt-4">
@@ -420,6 +411,12 @@ export default function ReviewPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    onClick={() => setIsThemeModalOpen(true)}
+                    className={controlBtnClasses}
+                  >
+                    Change Theme
+                  </button>
+                  <button
                     onClick={handleToggleAutoPlay}
                     className={`${controlBtnClasses} ${
                       isAutoPlaying ? "border-[#00bfa6] text-[#00bfa6] bg-[#00bfa6]/10" : ""
@@ -428,61 +425,72 @@ export default function ReviewPage() {
                   >
                     {isAutoPlaying ? "Pause" : "Play All"}
                   </button>
+                  <button
+                    onClick={() => setShowBestMoveArrow((prev) => !prev)}
+                    className={`${controlBtnClasses} ${
+                      showBestMoveArrow ? "border-[#00bfa6] text-[#00bfa6] bg-[#00bfa6]/10" : ""
+                    }`}
+                    disabled={currentEval?.status !== "success"}
+                  >
+                    {showBestMoveArrow ? "Hide Arrow" : "Show Arrow"}
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
-              <h2 className="text-2xl font-semibold text-gray-800">Move List & Evaluation</h2>
-              <div className="max-h-72 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                {timeline.length ? (
-                  <table className="w-full text-sm text-gray-700">
-                    <tbody>
-                      {movePairs.map((pair) => (
-                        <tr key={pair.moveNumber} className="border-b border-gray-200 last:border-none">
-                          <td className="py-2 pr-3 text-xs font-mono text-gray-500">{pair.moveNumber}.</td>
-                          <td className="py-1">
-                            {pair.white ? (
-                              <button
-                                className={`w-full text-left px-2 py-1 rounded-lg transition ${
-                                  currentMoveIndex === pair.whiteIndex
-                                    ? "bg-[#00bfa6]/10 text-[#00bfa6]"
-                                    : "hover:bg-white"
-                                }`}
-                                onClick={() => handleSelectMove(pair.whiteIndex)}
-                              >
-                                {pair.white.san}
-                              </button>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                          <td className="py-1">
-                            {pair.black ? (
-                              <button
-                                className={`w-full text-left px-2 py-1 rounded-lg transition ${
-                                  currentMoveIndex === pair.blackIndex
-                                    ? "bg-[#00bfa6]/10 text-[#00bfa6]"
-                                    : "hover:bg-white"
-                                }`}
-                                onClick={() => handleSelectMove(pair.blackIndex)}
-                              >
-                                {pair.black.san}
-                              </button>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-center text-gray-500">Load a PGN to populate moves.</p>
-                )}
+            <div className="flex flex-col gap-6">
+              <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
+                <h2 className="text-2xl font-semibold text-gray-800">Move List & Evaluation</h2>
+                <div className="max-h-96 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  {timeline.length ? (
+                    <table className="w-full text-sm text-gray-700">
+                      <tbody>
+                        {movePairs.map((pair) => (
+                          <tr key={pair.moveNumber} className="border-b border-gray-200 last:border-none">
+                            <td className="py-2 pr-3 text-xs font-mono text-gray-500">{pair.moveNumber}.</td>
+                            <td className="py-1">
+                              {pair.white ? (
+                                <button
+                                  className={`w-full text-left px-2 py-1 rounded-lg transition ${
+                                    currentMoveIndex === pair.whiteIndex
+                                      ? "bg-[#00bfa6]/10 text-[#00bfa6]"
+                                      : "hover:bg-white"
+                                  }`}
+                                  onClick={() => handleSelectMove(pair.whiteIndex)}
+                                >
+                                  {pair.white.san}
+                                </button>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td className="py-1">
+                              {pair.black ? (
+                                <button
+                                  className={`w-full text-left px-2 py-1 rounded-lg transition ${
+                                    currentMoveIndex === pair.blackIndex
+                                      ? "bg-[#00bfa6]/10 text-[#00bfa6]"
+                                      : "hover:bg-white"
+                                  }`}
+                                  onClick={() => handleSelectMove(pair.blackIndex)}
+                                >
+                                  {pair.black.san}
+                                </button>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-center text-gray-500">Load a PGN to populate moves.</p>
+                  )}
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow hover:shadow-2xl transition-all duration-300 p-5">
                 <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Engine Insight</p>
                 {!currentMove ? (
                   <p className="text-gray-500 text-sm">
@@ -625,6 +633,15 @@ function formatScore(score: EngineScore | null) {
   return value.startsWith("-") ? value : `+${value}`;
 }
 
+function getArrowFromBestMove(bestMove?: string | null): [Square, Square] | null {
+  if (!bestMove || bestMove.length < 4) return null;
+  const from = bestMove.slice(0, 2);
+  const to = bestMove.slice(2, 4);
+  const squareRegex = /^[a-h][1-8]$/;
+  if (!squareRegex.test(from) || !squareRegex.test(to)) return null;
+  return [from as Square, to as Square];
+}
+
 function formatDeltaLabel(delta: number | null) {
   if (delta == null) return "";
   const symbol = delta >= 0 ? "▲" : "▼";
@@ -639,6 +656,9 @@ function formatUciMove(uci: string) {
 }
 
 function EvaluationDetails({ evaluation }: { evaluation: EngineEvaluation }) {
+  const percent = getEvalPercent(evaluation.score);
+  const advantageText = describeAdvantage(percent);
+
   return (
     <div className="text-sm text-gray-700 space-y-1">
       <p>
@@ -653,6 +673,20 @@ function EvaluationDetails({ evaluation }: { evaluation: EngineEvaluation }) {
           PV: {evaluation.pv.slice(0, 8).join(" ")}
         </p>
       )}
+      <div className="mt-3 space-y-1">
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>White</span>
+          <span>Black</span>
+        </div>
+        <div className="h-3 rounded-full bg-gradient-to-r from-[#00bfa6] via-white to-black relative">
+          <span
+            className="absolute top-1/2 -translate-y-1/2 w-[2px] h-5 bg-gray-800 rounded"
+            style={{ left: `${percent * 100}%` }}
+            aria-hidden="true"
+          />
+        </div>
+        <p className="text-xs text-gray-500">{advantageText}</p>
+      </div>
     </div>
   );
 }
@@ -761,6 +795,23 @@ function getMateDetail(evaluation: EngineEvaluation | null): MateDetail | null {
     winner: evaluation.score.value > 0 ? "white" : "black",
     moves: Math.abs(evaluation.score.value),
   };
+}
+
+function getEvalPercent(score: EngineScore | null): number {
+  if (!score) return 0.5;
+  if (score.type === "mate") {
+    return score.value > 0 ? 1 : 0;
+  }
+  const cp = Math.max(-500, Math.min(500, score.value));
+  return (cp + 500) / 1000;
+}
+
+function describeAdvantage(percent: number): string {
+  if (percent >= 0.8) return "Decisive advantage for White";
+  if (percent >= 0.65) return "White pressing";
+  if (percent <= 0.2) return "Decisive advantage for Black";
+  if (percent <= 0.35) return "Black pressing";
+  return "Roughly balanced";
 }
 
 function getPreviousReviewedDetail(

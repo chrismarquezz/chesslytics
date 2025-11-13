@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import {
@@ -6,7 +6,7 @@ import {
   ChevronLast,
   ChevronLeft,
   ChevronRight,
-  RotateCcw,
+  ArrowUpDown,
   Palette,
   Play,
   Pause,
@@ -15,10 +15,10 @@ import {
 import BoardControlButton from "../components/review/BoardControlButton";
 import Navbar from "../components/Navbar";
 import GameInputCard from "../components/review/GameInputCard";
-import EngineFindingsCard, {
-  type FindingRow as EngineFindingRow,
-  type QualityCard as EngineQualityCard,
-} from "../components/review/EngineFindingsCard";
+// import EngineFindingsCard, {
+//   type FindingRow as EngineFindingRow,
+//   type QualityCard as EngineQualityCard,
+// } from "../components/review/EngineFindingsCard";
 import ThemeSelectorModal from "../components/review/ThemeSelectorModal";
 
 type View = "analysis" | "timeline" | "insights";
@@ -45,9 +45,6 @@ type MoveEvalState =
   | { status: "loading" }
   | { status: "success"; evaluation: EngineEvaluation }
   | { status: "error"; error: string };
-
-type Severity = "best" | "good" | "inaccuracy" | "mistake" | "blunder";
-type MateDetail = { winner: "white" | "black"; moves: number };
 
 interface GameSummary {
   totalMoves: number;
@@ -88,8 +85,13 @@ export default function ReviewPage() {
   const [timeline, setTimeline] = useState<MoveSnapshot[]>([]);
   const [currentMoveIndex, setCurrentMoveIndex] = useState<number>(-1);
   const [moveEvaluations, setMoveEvaluations] = useState<Record<number, MoveEvalState>>({});
+  const [lastEvaluationDisplay, setLastEvaluationDisplay] = useState<{
+    evaluation: EngineEvaluation;
+    fen?: string;
+  } | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisReady, setAnalysisReady] = useState(false);
+  const [analysisKey, setAnalysisKey] = useState(0);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [boardSize, setBoardSize] = useState(640);
@@ -104,7 +106,6 @@ export default function ReviewPage() {
     return "modern";
   });
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
-  const [reviewedPlies, setReviewedPlies] = useState<Set<number>>(() => new Set());
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [showBestMoveArrow, setShowBestMoveArrow] = useState(true);
 
@@ -127,28 +128,11 @@ export default function ReviewPage() {
   }, [boardTheme]);
 
   useEffect(() => {
-    if (!isAutoPlaying) return;
-    if (!timeline.length) {
-      setIsAutoPlaying(false);
-      return;
-    }
-    const nextIndex =
-      currentMoveIndex < timeline.length - 1 ? currentMoveIndex + 1 : currentMoveIndex === -1 ? 0 : null;
-    if (nextIndex == null) {
-      setIsAutoPlaying(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      handleSelectMove(nextIndex);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [isAutoPlaying, currentMoveIndex, timeline]);
-
-  useEffect(() => {
     if (!timeline.length) {
       setIsAutoPlaying(false);
     }
   }, [timeline.length]);
+
 
   const boardPosition =
     currentMoveIndex >= 0 && timeline[currentMoveIndex] ? timeline[currentMoveIndex].fen : initialFen;
@@ -176,6 +160,52 @@ export default function ReviewPage() {
   const currentMove = currentMoveIndex >= 0 ? timeline[currentMoveIndex] : null;
   const currentEval = currentMove ? moveEvaluations[currentMove.ply] : null;
 
+  useEffect(() => {
+    if (currentEval?.status === "success" && currentMove) {
+      setLastEvaluationDisplay({
+        evaluation: currentEval.evaluation,
+        fen: currentMove.fen,
+      });
+    }
+  }, [currentEval, currentMove]);
+
+  const timelineStats = useMemo(() => {
+    const stats = {
+      evaluated: 0,
+      loading: 0,
+      pending: 0,
+      errors: 0,
+      total: timeline.length,
+    };
+    timeline.forEach((move) => {
+      const status = moveEvaluations[move.ply]?.status ?? "idle";
+      if (status === "success") {
+        stats.evaluated += 1;
+      } else if (status === "loading") {
+        stats.loading += 1;
+      } else if (status === "error") {
+        stats.errors += 1;
+      } else {
+        stats.pending += 1;
+      }
+    });
+    return {
+      ...stats,
+      progress: stats.total ? stats.evaluated / stats.total : 0,
+    };
+  }, [timeline, moveEvaluations]);
+
+  const timelineEntries = useMemo(
+    () =>
+      timeline.map((move, index) => ({
+        move,
+        index,
+        state: moveEvaluations[move.ply],
+        phase: getMovePhase(move.moveNumber),
+      })),
+    [timeline, moveEvaluations]
+  );
+
   const bestMoveArrows = useMemo(() => {
     if (!showBestMoveArrow) return [] as Array<[Square, Square]>;
     if (currentEval?.status !== "success") return [];
@@ -183,9 +213,41 @@ export default function ReviewPage() {
     return arrow ? [arrow] : [];
   }, [showBestMoveArrow, currentEval]);
 
+  const displayedEvaluation =
+    currentEval?.status === "success" && currentMove
+      ? { evaluation: currentEval.evaluation, fen: currentMove.fen }
+      : lastEvaluationDisplay;
+
   const handleLoadSample = () => {
     setPgnInput(SAMPLE_PGN.trim());
   };
+
+  const requestEvaluation = useCallback(async (move: MoveSnapshot) => {
+    setMoveEvaluations((prev) => ({
+      ...prev,
+      [move.ply]: { status: "loading" },
+    }));
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/review/evaluate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fen: move.fen, depth: 16 }),
+      });
+      const payload: EngineEvaluation | { error: string } = await response.json();
+      if (!response.ok || "error" in payload) {
+        throw new Error("error" in payload ? payload.error : "Failed to evaluate position");
+      }
+      setMoveEvaluations((prev) => ({
+        ...prev,
+        [move.ply]: { status: "success", evaluation: payload },
+      }));
+    } catch (err) {
+      setMoveEvaluations((prev) => ({
+        ...prev,
+        [move.ply]: { status: "error", error: getErrorMessage(err, "Engine error") },
+      }));
+    }
+  }, []);
 
   const bootstrapTimeline = (moves: MoveSnapshot[], autoEvaluateFirst = false) => {
     setTimeline(moves);
@@ -195,12 +257,7 @@ export default function ReviewPage() {
       map[move.ply] = { status: "idle" };
     });
     setMoveEvaluations(map);
-    setReviewedPlies(() => {
-      if (autoEvaluateFirst && moves.length) {
-        return new Set([moves[0].ply]);
-      }
-      return new Set();
-    });
+    setLastEvaluationDisplay(null);
     setIsAutoPlaying(false);
     if (autoEvaluateFirst && moves.length) {
       requestEvaluation(moves[0]);
@@ -211,16 +268,12 @@ export default function ReviewPage() {
     if (!pgnInput.trim()) return;
     setInputError(null);
     setAnalysisError(null);
-    setAnalysisReady(false);
-    setTimeline([]);
-    setMoveEvaluations({});
-    setReviewedPlies(new Set());
 
     let parsedMoves: MoveSnapshot[] = [];
     try {
       parsedMoves = buildTimelineFromPgn(pgnInput);
-    } catch (err: any) {
-      setInputError(err.message || "Invalid PGN");
+    } catch (err) {
+      setInputError(getErrorMessage(err, "Invalid PGN"));
       return;
     }
 
@@ -249,81 +302,99 @@ export default function ReviewPage() {
       bootstrapTimeline(timelineResult, true);
       setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
       setAnalysisReady(true);
-    } catch (err: any) {
-      setAnalysisError(err.message || "Failed to run analysis");
+      setAnalysisKey((prev) => prev + 1);
+    } catch (err) {
+      setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
     } finally {
       setAnalysisLoading(false);
     }
   };
 
-  const handleSelectMove = (index: number) => {
-    if (index < -1 || index > timeline.length - 1) return;
-    setCurrentMoveIndex(index);
-    if (index >= 0) {
-      const move = timeline[index];
-      setReviewedPlies((prev) => {
-        if (prev.has(move.ply)) return prev;
-        const next = new Set(prev);
-        next.add(move.ply);
-        return next;
-      });
-      const state = moveEvaluations[move.ply];
-      if (!state || state.status === "idle") {
-        requestEvaluation(move);
+  const handleSelectMove = useCallback(
+    (index: number) => {
+      if (index < -1 || index > timeline.length - 1) return;
+      setCurrentMoveIndex(index);
+      if (index >= 0) {
+        const move = timeline[index];
+        const state = moveEvaluations[move.ply];
+        if (!state || state.status === "idle") {
+          requestEvaluation(move);
+        }
       }
-    }
-  };
+    },
+    [moveEvaluations, requestEvaluation, timeline]
+  );
 
-  const requestEvaluation = async (move: MoveSnapshot) => {
-    setMoveEvaluations((prev) => ({
-      ...prev,
-      [move.ply]: { status: "loading" },
-    }));
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/review/evaluate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fen: move.fen, depth: 16 }),
-      });
-      const payload: EngineEvaluation | { error: string } = await response.json();
-      if (!response.ok || "error" in payload) {
-        throw new Error("error" in payload ? payload.error : "Failed to evaluate position");
-      }
-      setMoveEvaluations((prev) => ({
-        ...prev,
-        [move.ply]: { status: "success", evaluation: payload },
-      }));
-    } catch (err: any) {
-      setMoveEvaluations((prev) => ({
-        ...prev,
-        [move.ply]: { status: "error", error: err.message || "Engine error" },
-      }));
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+    if (!timeline.length) {
+      setIsAutoPlaying(false);
+      return;
     }
-  };
+    const nextIndex =
+      currentMoveIndex < timeline.length - 1 ? currentMoveIndex + 1 : currentMoveIndex === -1 ? 0 : null;
+    if (nextIndex == null) {
+      setIsAutoPlaying(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleSelectMove(nextIndex);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [handleSelectMove, isAutoPlaying, currentMoveIndex, timeline]);
+
+  useEffect(() => {
+    if (!analysisReady || !timeline.length) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        if (tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable) {
+          return;
+        }
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        handleSelectMove(Math.max(currentMoveIndex - 1, -1));
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        handleSelectMove(Math.min(currentMoveIndex + 1, timeline.length - 1));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        handleSelectMove(timeline.length - 1);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        handleSelectMove(-1);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [analysisReady, timeline.length, currentMoveIndex, handleSelectMove]);
 
   const handleToggleAutoPlay = () => {
     if (!timeline.length) return;
     setIsAutoPlaying((prev) => !prev);
   };
 
-  const evaluatedMoves = useMemo(() => {
-    return timeline.filter(
-      (move) => reviewedPlies.has(move.ply) && moveEvaluations[move.ply]?.status === "success"
-    );
-  }, [timeline, moveEvaluations, reviewedPlies]);
+  const handleInspectFromTimeline = (index: number) => {
+    handleSelectMove(index);
+    setSelectedView("analysis");
+  };
 
-  const severitySummary = useMemo(
-    () => buildSeveritySummary(timeline, moveEvaluations, reviewedPlies),
-    [timeline, moveEvaluations, reviewedPlies]
-  );
-  const qualityCards = useMemo<EngineQualityCard[]>(
-    () => qualityOverviewCards(severitySummary.totals),
-    [severitySummary]
-  );
-  const engineRows = useMemo<EngineFindingRow[]>(
-    () => buildEngineRows(evaluatedMoves, moveEvaluations, reviewedPlies),
-    [evaluatedMoves, moveEvaluations, reviewedPlies]
-  );
+  const handleEvaluateFromTimeline = (move: MoveSnapshot) => {
+    const state = moveEvaluations[move.ply];
+    if (state?.status === "loading" || state?.status === "success") return;
+    requestEvaluation(move);
+  };
+
+  // const evaluatedMoves = useMemo(() => {
+  //   return timeline.filter(
+  //     (move) => reviewedPlies.has(move.ply) && moveEvaluations[move.ply]?.status === "success"
+  //   );
+  // }, [timeline, moveEvaluations, reviewedPlies]);
 
   const atEnd = currentMoveIndex >= timeline.length - 1;
 
@@ -341,21 +412,7 @@ export default function ReviewPage() {
                   Paste your PGN, replay moves on the board, and let Stockfish surface insights as you go.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                {(["analysis", "timeline", "insights"] as const).map((view) => (
-                  <button
-                    key={view}
-                    onClick={() => setSelectedView(view)}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${
-                      selectedView === view
-                        ? "bg-[#00bfa6] text-white shadow-lg"
-                        : "bg-white text-gray-700 border border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    {view}
-                  </button>
-                ))}
-              </div>
+              {/* Timeline/Insights tabs hidden for now */}
             </div>
           </header>
 
@@ -374,8 +431,8 @@ export default function ReviewPage() {
             </div>
           )}
 
-          {analysisReady && (
-            <section className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8">
+          {analysisReady && selectedView === "analysis" && (
+            <section key={analysisKey} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8 fade-in">
               <div className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
                 <div className="flex justify-center">
                   <Chessboard
@@ -389,8 +446,17 @@ export default function ReviewPage() {
                   customArrows={bestMoveArrows}
                 />
               </div>
-              <div className="flex flex-wrap gap-4 justify-between items-center border-t border-gray-100 pt-4">
-                <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-4 items-center border-t border-gray-100 pt-4">
+                <div className="flex gap-2 justify-start flex-shrink-0">
+                  <BoardControlButton
+                    onClick={() => setBoardOrientation((prev) => (prev === "white" ? "black" : "white"))}
+                    disabled={!timeline.length}
+                    label="Flip Board"
+                  >
+                    <ArrowUpDown className="h-4 w-4" />
+                  </BoardControlButton>
+                </div>
+                <div className="flex flex-1 flex-wrap md:flex-nowrap gap-2 justify-center">
                   <BoardControlButton
                     onClick={() => handleSelectMove(0)}
                     disabled={!timeline.length}
@@ -406,6 +472,14 @@ export default function ReviewPage() {
                     <ChevronLeft className="h-4 w-4" />
                   </BoardControlButton>
                   <BoardControlButton
+                    onClick={handleToggleAutoPlay}
+                    active={isAutoPlaying}
+                    disabled={!timeline.length}
+                    label={isAutoPlaying ? "Pause" : "Play"}
+                  >
+                    {isAutoPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </BoardControlButton>
+                  <BoardControlButton
                     onClick={() => handleSelectMove(Math.min(currentMoveIndex + 1, timeline.length - 1))}
                     disabled={timeline.length === 0 || atEnd}
                     label="Next move"
@@ -419,55 +493,46 @@ export default function ReviewPage() {
                   >
                     <ChevronLast className="h-4 w-4" />
                   </BoardControlButton>
-                  <BoardControlButton
-                    onClick={() => setBoardOrientation((prev) => (prev === "white" ? "black" : "white"))}
-                    disabled={!timeline.length}
-                    label="Flip Board"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </BoardControlButton>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2 justify-end flex-shrink-0">
+                  <BoardControlButton
+                    onClick={() => setShowBestMoveArrow((prev) => !prev)}
+                    active={showBestMoveArrow}
+                    disabled={currentEval?.status !== "success"}
+                    label={showBestMoveArrow ? "Hide Hint" : "Show Hint"}
+                  >
+                    <Swords className="h-4 w-4" />
+                  </BoardControlButton>
                   <BoardControlButton
                     onClick={() => setIsThemeModalOpen(true)}
                     label="Change Theme"
                   >
                     <Palette className="h-4 w-4" />
                   </BoardControlButton>
-                  <BoardControlButton
-                    onClick={handleToggleAutoPlay}
-                    active={isAutoPlaying}
-                    disabled={!timeline.length}
-                    label={isAutoPlaying ? "Pause Auto Play" : "Play All"}
-                  >
-                    {isAutoPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </BoardControlButton>
-                  <BoardControlButton
-                    onClick={() => setShowBestMoveArrow((prev) => !prev)}
-                    active={showBestMoveArrow}
-                    disabled={currentEval?.status !== "success"}
-                    label={showBestMoveArrow ? "Hide Best Move Arrow" : "Show Best Move Arrow"}
-                  >
-                    <Swords className="h-4 w-4" />
-                  </BoardControlButton>
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col gap-6">
-              <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
-                <h2 className="text-2xl font-semibold text-gray-800">Move List</h2>
-                <div className="max-h-96 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 overflow-hidden">
+                <div className="max-h-96 overflow-y-auto bg-gray-50">
                   {timeline.length ? (
                     <table className="w-full text-sm text-gray-700">
-                      <tbody>
+                      <thead className="text-xs uppercase tracking-wide text-gray-100 bg-gray-800 sticky top-0 z-10">
+                        <tr>
+                          <th className="py-3 pr-4 text-center font-semibold">#</th>
+                          <th className="py-3 px-4 text-center font-semibold">White</th>
+                          <th className="py-3 px-4 text-center font-semibold">Black</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-gray-50">
                         {movePairs.map((pair) => (
                           <tr key={pair.moveNumber} className="border-b border-gray-200 last:border-none">
-                            <td className="py-2 pr-3 text-xs font-mono text-gray-500">{pair.moveNumber}.</td>
-                            <td className="py-1">
+                            <td className="py-2 pr-4 text-xs font-mono text-gray-500 text-center">{pair.moveNumber}.</td>
+                            <td className="py-1 px-4">
                               {pair.white ? (
                                 <button
-                                  className={`w-full text-left px-2 py-1 rounded-lg transition ${
+                                  className={`w-full text-center px-2 py-1 rounded-lg transition ${
                                     currentMoveIndex === pair.whiteIndex
                                       ? "bg-[#00bfa6]/10 text-[#00bfa6]"
                                       : "hover:bg-white"
@@ -477,13 +542,13 @@ export default function ReviewPage() {
                                   {pair.white.san}
                                 </button>
                               ) : (
-                                "-"
+                                <span className="block text-center text-gray-400">—</span>
                               )}
                             </td>
-                            <td className="py-1">
+                            <td className="py-1 px-4">
                               {pair.black ? (
                                 <button
-                                  className={`w-full text-left px-2 py-1 rounded-lg transition ${
+                                  className={`w-full text-center px-2 py-1 rounded-lg transition ${
                                     currentMoveIndex === pair.blackIndex
                                       ? "bg-[#00bfa6]/10 text-[#00bfa6]"
                                       : "hover:bg-white"
@@ -493,7 +558,7 @@ export default function ReviewPage() {
                                   {pair.black.san}
                                 </button>
                               ) : (
-                                "-"
+                                <span className="block text-center text-gray-400">—</span>
                               )}
                             </td>
                           </tr>
@@ -517,12 +582,13 @@ export default function ReviewPage() {
                   <p className="text-gray-500 text-sm">
                     Select a move to fetch Stockfish feedback for that position.
                   </p>
-                ) : currentEval?.status === "loading" ? (
-                  <p className="text-gray-500 text-sm">Analyzing move {currentMove.moveNumber}...</p>
-                ) : currentEval?.status === "success" ? (
-                  <EvaluationDetails evaluation={currentEval.evaluation} fen={currentMove?.fen} />
                 ) : currentEval?.status === "error" ? (
                   <p className="text-sm text-red-500">Engine error: {currentEval.error}</p>
+                ) : displayedEvaluation ? (
+                  <EvaluationDetails
+                    evaluation={displayedEvaluation.evaluation}
+                    fen={displayedEvaluation.fen}
+                  />
                 ) : (
                   <p className="text-sm text-gray-500">
                     No evaluation yet. Step through the move or rerun analysis to prefetch Stockfish output.
@@ -532,6 +598,22 @@ export default function ReviewPage() {
             </div>
             </section>
           )}
+
+          {/* Timeline view temporarily hidden
+          {analysisReady && selectedView === "timeline" && (
+            <section className="fade-in">
+              ...
+            </section>
+          )}
+          */}
+
+          {/* Insights view temporarily hidden
+          {analysisReady && selectedView === "insights" && (
+            <section className="fade-in">
+              ...
+            </section>
+          )}
+          */}
 
           {/* Engine findings intentionally hidden for demo */}
         </div>
@@ -551,110 +633,14 @@ export default function ReviewPage() {
   );
 }
 
-function buildEngineRows(
-  evaluated: MoveSnapshot[],
-  evalStates: Record<number, MoveEvalState>,
-  reviewed: Set<number>
-): EngineFindingRow[] {
-  return evaluated
-    .map((move) => {
-      if (!reviewed.has(move.ply)) return null;
-      const state = evalStates[move.ply];
-      if (state?.status !== "success") return null;
-      const prevDetail = getPreviousReviewedDetail(move.ply, evalStates, reviewed);
-      const classification = classifyMove(move, state.evaluation, prevDetail.score, prevDetail.mate);
-
-      return {
-        id: move.ply,
-        moveLabel: `${move.moveNumber}.${move.color === "white" ? "" : ".."}`,
-        played: move.san,
-        qualityLabel: classification.label,
-        badgeClass: classification.badgeClass,
-        bestMove: formatBestMoveSan(state.evaluation.bestMove, move.fen),
-        evalText: formatScore(state.evaluation.score),
-        deltaLabel: formatDeltaLabel(classification.delta),
-      } as EngineFindingRow;
-    })
-    .filter((row): row is EngineFindingRow => row !== null);
-}
-
-interface SeveritySummary {
-  totals: Record<Severity, number>;
-  white: ColorSeveritySummary;
-  black: ColorSeveritySummary;
-}
-
-interface ColorSeveritySummary {
-  moves: number;
-  accuracy: number | null;
-  counts: Record<Severity, number>;
-}
-
-const ZERO_COUNTS: Record<Severity, number> = {
-  best: 0,
-  good: 0,
-  inaccuracy: 0,
-  mistake: 0,
-  blunder: 0,
-};
-
-const SEVERITY_PENALTIES: Record<Severity, number> = {
-  best: 0,
-  good: 1,
-  inaccuracy: 7,
-  mistake: 15,
-  blunder: 30,
-};
-
-function buildSeveritySummary(
-  timeline: MoveSnapshot[],
-  evals: Record<number, MoveEvalState>,
-  reviewed: Set<number>
-): SeveritySummary {
-  const totals: Record<Severity, number> = { ...ZERO_COUNTS };
-
-  const baseColorSummary = () => ({
-    moves: 0,
-    accuracy: null as number | null,
-    counts: { ...ZERO_COUNTS },
-    penalty: 0,
-  });
-
-  const colors = {
-    white: baseColorSummary(),
-    black: baseColorSummary(),
-  } as const;
-
-  let prevScore: number | null = null;
-  let prevMate: MateDetail | null = null;
-
-  timeline.forEach((move) => {
-    if (!reviewed.has(move.ply)) return;
-    const state = evals[move.ply];
-    if (state?.status !== "success") return;
-    const classification = classifyMove(move, state.evaluation, prevScore, prevMate);
-    totals[classification.severity] += 1;
-
-    const summary = colors[move.color];
-    summary.moves += 1;
-    summary.counts[classification.severity] += 1;
-    summary.penalty += SEVERITY_PENALTIES[classification.severity];
-
-    prevScore = getWhiteScore(state.evaluation);
-    prevMate = getMateDetail(state.evaluation);
-  });
-
-  const finalize = (data: ReturnType<typeof baseColorSummary>): ColorSeveritySummary => ({
-    moves: data.moves,
-    accuracy: data.moves > 0 ? Math.max(0, 100 - data.penalty / data.moves) : null,
-    counts: data.counts,
-  });
-
-  return {
-    totals,
-    white: finalize(colors.white),
-    black: finalize(colors.black),
-  };
+function getErrorMessage(err: unknown, fallback: string) {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === "string" && err.trim()) {
+    return err;
+  }
+  return fallback;
 }
 
 function mergeSampleEvaluations(
@@ -714,12 +700,6 @@ function getArrowFromBestMove(bestMove?: string | null): [Square, Square] | null
   return [from as Square, to as Square];
 }
 
-function formatDeltaLabel(delta: number | null) {
-  if (delta == null) return "";
-  const symbol = delta >= 0 ? "▲" : "▼";
-  return `${symbol} ${Math.abs(delta).toFixed(2)}`;
-}
-
 function formatBestMoveSan(bestMove?: string | null, fen?: string) {
   if (!bestMove) return "—";
   try {
@@ -735,10 +715,48 @@ function formatBestMoveSan(bestMove?: string | null, fen?: string) {
   }
 }
 
+function formatPvLines(pv: string[], fen?: string): string[] {
+  if (!pv.length) return [];
+  const engine = fen ? new Chess(fen) : new Chess();
+  const fenParts = fen?.split(" ");
+  let turn: "w" | "b" = fenParts && fenParts[1] === "b" ? "b" : "w";
+  let moveNumber = fenParts && fenParts[5] ? Number(fenParts[5]) || 1 : 1;
+  const moves: string[] = [];
+
+  for (const move of pv) {
+    const parsed = engine.move({
+      from: move.slice(0, 2) as Square,
+      to: move.slice(2, 4) as Square,
+      promotion: move[4],
+    });
+    if (!parsed) break;
+
+    const isWhiteMove = turn === "w";
+    const prefix = isWhiteMove ? `${moveNumber}.` : `${moveNumber}...`;
+    moves.push(`${prefix} ${parsed.san}`);
+    if (!isWhiteMove) moveNumber += 1;
+    turn = isWhiteMove ? "b" : "w";
+  }
+
+  return moves.length ? [moves.join(" ")] : [];
+}
+
+function getMateWinner(score: EngineScore | null, fen?: string): "White" | "Black" | undefined {
+  if (!score || score.type !== "mate") return undefined;
+  if (score.value > 0) return "White";
+  if (score.value < 0) return "Black";
+  const turn = fen?.split(" ")[1];
+  if (turn === "w") return "Black";
+  if (turn === "b") return "White";
+  return undefined;
+}
+
 function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; fen?: string }) {
-  const percent = getEvalPercent(evaluation.score);
-  const advantageText = describeAdvantage(percent);
+  const mateWinner = getMateWinner(evaluation.score, fen);
+  const percent = getEvalPercent(evaluation.score, mateWinner);
+  const advantageText = describeAdvantage(percent, evaluation.score, mateWinner);
   const bestMoveSan = formatBestMoveSan(evaluation.bestMove, fen);
+  const pvLines = formatPvLines(evaluation.pv, fen);
 
   return (
     <div className="text-sm text-gray-700 space-y-1">
@@ -749,10 +767,16 @@ function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; 
         Best Move: <span className="font-semibold">{bestMoveSan}</span>
       </p>
       <p>Depth: {evaluation.depth}</p>
-      {evaluation.pv.length > 0 && (
-        <p className="text-xs text-gray-500">
-          PV: {evaluation.pv.slice(0, 8).join(" ")}
-        </p>
+      {pvLines.length > 0 && (
+        <div className="text-xs text-gray-600 space-y-1">
+          <p className="uppercase tracking-wide text-[10px] text-gray-500">Top variations</p>
+          {pvLines.map((line, index) => (
+            <div key={`${line}-${index}`} className="flex gap-2">
+              <span className="text-gray-400">#{index + 1}</span>
+              <span className="font-mono">{line}</span>
+            </div>
+          ))}
+        </div>
       )}
       <div className="mt-3 space-y-1">
         <div className="flex justify-between text-xs text-gray-500">
@@ -762,7 +786,7 @@ function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; 
         <div className="h-3 rounded-full bg-gradient-to-r from-[#00bfa6] via-white to-black relative">
           <span
             className="absolute top-1/2 -translate-y-1/2 w-[2px] h-5 bg-gray-800 rounded"
-            style={{ left: `${percent * 100}%` }}
+            style={{ left: `${(1 - percent) * 100}%` }}
             aria-hidden="true"
           />
         </div>
@@ -772,96 +796,33 @@ function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; 
   );
 }
 
-function classifyMove(
-  move: MoveSnapshot,
-  evaluation: EngineEvaluation,
-  prevWhiteScore: number | null,
-  prevMate: MateDetail | null
-) {
-  const currentScore = getWhiteScore(evaluation);
-  const currentMate = getMateDetail(evaluation);
-
-  let severity: Severity = "good";
-  let delta: number | null = null;
-
-  if (currentScore != null && prevWhiteScore != null) {
-    const diff = currentScore - prevWhiteScore;
-    const perspective = move.color === "white" ? 1 : -1;
-    delta = diff * perspective;
-
-    const unchangedEval = Math.abs(diff) < 0.01; // treat virtually identical evals as unchanged
-
-    if (unchangedEval) {
-      severity = "best";
-      delta = 0;
-    } else if (delta <= -2) severity = "blunder";
-    else if (delta <= -1) severity = "mistake";
-    else if (delta <= -0.5) severity = "inaccuracy";
-    else if (delta >= 0.3) severity = "best";
-  }
-
-  if (currentMate) {
-    const deliveredMate = currentMate.moves === 0 && currentMate.winner === move.color;
-    const prevSameWinner = prevMate && prevMate.winner === currentMate.winner ? prevMate : null;
-    const isMoverWinning = currentMate.winner === move.color;
-
-    const introducedMate = isMoverWinning && !prevSameWinner;
-
-    if (deliveredMate || introducedMate || (isMoverWinning && prevSameWinner && currentMate.moves < prevSameWinner.moves)) {
-      severity = "best";
-      delta = delta ?? 0.5;
-    } else if (isMoverWinning && prevSameWinner && currentMate.moves > prevSameWinner.moves) {
-      severity = severity === "best" ? "good" : severity;
-      delta = delta ?? -0.5;
-    }
-  }
-
-  const styleMap: Record<Severity, { label: string; badge: string }> = {
-    best: { label: "Best", badge: "bg-emerald-100 text-emerald-700" },
-    good: { label: "Solid", badge: "bg-blue-100 text-blue-700" },
-    inaccuracy: { label: "Inaccuracy", badge: "bg-amber-100 text-amber-700" },
-    mistake: { label: "Mistake", badge: "bg-orange-100 text-orange-700" },
-    blunder: { label: "Blunder", badge: "bg-red-100 text-red-700" },
-  };
-
-  return { severity, label: styleMap[severity].label, badgeClass: styleMap[severity].badge, delta };
-}
-
-function qualityOverviewCards(stats: Record<Severity, number>) {
-  return [
-    { title: "Best", value: stats.best, accent: "text-emerald-600" },
-    { title: "Mistakes", value: stats.mistake, accent: "text-orange-500" },
-    { title: "Blunders", value: stats.blunder, accent: "text-red-500" },
-    { title: "Inaccuracies", value: stats.inaccuracy, accent: "text-amber-500" },
-  ];
-}
-
-function getWhiteScore(evaluation: EngineEvaluation | null): number | null {
-  if (!evaluation?.score) return null;
-  if (evaluation.score.type === "mate") {
-    return evaluation.score.value > 0 ? 100 : -100;
-  }
-  return evaluation.score.value / 100;
-}
-
-function getMateDetail(evaluation: EngineEvaluation | null): MateDetail | null {
-  if (!evaluation?.score || evaluation.score.type !== "mate") return null;
-  return {
-    winner: evaluation.score.value > 0 ? "white" : "black",
-    moves: Math.abs(evaluation.score.value),
-  };
-}
-
-function getEvalPercent(score: EngineScore | null): number {
+function getEvalPercent(score: EngineScore | null, mateWinner?: "White" | "Black"): number {
   if (!score) return 0.5;
   if (score.type === "mate") {
-    return score.value > 0 ? 1 : 0;
+    if (score.value > 0) return 1;
+    if (score.value < 0) return 0;
+    if (mateWinner === "White") return 1;
+    if (mateWinner === "Black") return 0;
+    return 0.5;
   }
   const cp = Math.max(-500, Math.min(500, score.value));
   return (cp + 500) / 1000;
 }
 
-function describeAdvantage(percent: number): string {
+function describeAdvantage(
+  percent: number,
+  score?: EngineScore | null,
+  mateWinner?: "White" | "Black",
+): string {
+  if (score?.type === "mate") {
+    const winner = mateWinner ?? (score.value > 0 ? "White" : "Black");
+    const moves = Math.abs(score.value);
+    if (moves === 0) {
+      return winner ? `${winner} wins by checkmate` : "Checkmate on the board";
+    }
+    const moveLabel = moves === 1 ? "move" : "moves";
+    return `Checkmate in ${moves} ${moveLabel} for ${winner ?? "White"}`;
+  }
   if (percent >= 0.8) return "Decisive advantage for White";
   if (percent >= 0.65) return "White pressing";
   if (percent <= 0.2) return "Decisive advantage for Black";
@@ -869,20 +830,48 @@ function describeAdvantage(percent: number): string {
   return "Roughly balanced";
 }
 
-function getPreviousReviewedDetail(
-  ply: number,
-  evalStates: Record<number, MoveEvalState>,
-  reviewedPlies: Set<number>
-): { score: number | null; mate: MateDetail | null } {
-  for (let prev = ply - 1; prev >= 1; prev--) {
-    if (!reviewedPlies.has(prev)) continue;
-    const state = evalStates[prev];
-    if (state?.status === "success") {
-      return { score: getWhiteScore(state.evaluation), mate: getMateDetail(state.evaluation) };
-    }
-  }
-  return { score: null, mate: null };
+function getMovePhase(moveNumber: number): "Opening" | "Middlegame" | "Endgame" {
+  if (moveNumber <= 10) return "Opening";
+  if (moveNumber <= 30) return "Middlegame";
+  return "Endgame";
 }
+
+function getEvaluationDisplay(state?: MoveEvalState, fen?: string) {
+  if (!state || state.status === "idle") {
+    return {
+      label: "Not evaluated",
+      tone: "text-gray-500",
+      dotClass: "bg-gray-300",
+      sublabel: "",
+    };
+  }
+  if (state.status === "loading") {
+    return {
+      label: "Analyzing…",
+      tone: "text-blue-600",
+      dotClass: "bg-blue-400 animate-pulse",
+      sublabel: "",
+    };
+  }
+  if (state.status === "error") {
+    return {
+      label: state.error || "Engine error",
+      tone: "text-red-500",
+      dotClass: "bg-red-500",
+      sublabel: "",
+    };
+  }
+  const scoreLabel = formatScore(state.evaluation.score);
+  const mateWinner = getMateWinner(state.evaluation.score, fen);
+  const percent = getEvalPercent(state.evaluation.score, mateWinner);
+  return {
+    label: `Score ${scoreLabel}`,
+    tone: "text-[#00bfa6]",
+    dotClass: "bg-[#00bfa6]",
+    sublabel: describeAdvantage(percent, state.evaluation.score, mateWinner),
+  };
+}
+
 const BOARD_THEMES: Record<
   BoardThemeKey,
   {

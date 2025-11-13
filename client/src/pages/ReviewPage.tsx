@@ -27,6 +27,9 @@ type MoveEvalState =
   | { status: "success"; evaluation: EngineEvaluation }
   | { status: "error"; error: string };
 
+type Severity = "best" | "good" | "inaccuracy" | "mistake" | "blunder";
+type MateDetail = { winner: "white" | "black"; moves: number };
+
 interface GameSummary {
   totalMoves: number;
   sampled: number;
@@ -71,6 +74,9 @@ export default function ReviewPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [boardSize, setBoardSize] = useState(520);
+  const [boardOrientation, setBoardOrientation] = useState<"white" | "black">("white");
+  const [reviewedPlies, setReviewedPlies] = useState<Set<number>>(() => new Set());
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
 
   const initialFen = useMemo(() => new Chess().fen(), []);
 
@@ -84,6 +90,30 @@ export default function ReviewPage() {
     window.addEventListener("resize", resizeBoard);
     return () => window.removeEventListener("resize", resizeBoard);
   }, []);
+
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+    if (!timeline.length) {
+      setIsAutoPlaying(false);
+      return;
+    }
+    const nextIndex =
+      currentMoveIndex < timeline.length - 1 ? currentMoveIndex + 1 : currentMoveIndex === -1 ? 0 : null;
+    if (nextIndex == null) {
+      setIsAutoPlaying(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleSelectMove(nextIndex);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isAutoPlaying, currentMoveIndex, timeline]);
+
+  useEffect(() => {
+    if (!timeline.length) {
+      setIsAutoPlaying(false);
+    }
+  }, [timeline.length]);
 
   const boardPosition =
     currentMoveIndex >= 0 && timeline[currentMoveIndex] ? timeline[currentMoveIndex].fen : initialFen;
@@ -112,11 +142,15 @@ export default function ReviewPage() {
   const currentEval = currentMove ? moveEvaluations[currentMove.ply] : null;
 
   const summaryCards = buildSummaryCards(analysisSummary, timeline.length, currentMoveIndex + 1);
+  const qualityStats = useMemo(
+    () => computeQualityStats(timeline, moveEvaluations, reviewedPlies),
+    [timeline, moveEvaluations, reviewedPlies]
+  );
 
   const handleLoadSample = () => {
     setPgnInput(SAMPLE_PGN.trim());
     try {
-      bootstrapTimeline(buildTimelineFromPgn(SAMPLE_PGN));
+      bootstrapTimeline(buildTimelineFromPgn(SAMPLE_PGN), true);
       setAnalysisSummary(null);
       setAnalysisError(null);
     } catch (err: any) {
@@ -124,7 +158,7 @@ export default function ReviewPage() {
     }
   };
 
-  const bootstrapTimeline = (moves: MoveSnapshot[]) => {
+  const bootstrapTimeline = (moves: MoveSnapshot[], autoEvaluateFirst = false) => {
     setTimeline(moves);
     setCurrentMoveIndex(moves.length ? 0 : -1);
     const map: Record<number, MoveEvalState> = {};
@@ -132,6 +166,16 @@ export default function ReviewPage() {
       map[move.ply] = { status: "idle" };
     });
     setMoveEvaluations(map);
+    setReviewedPlies(() => {
+      if (autoEvaluateFirst && moves.length) {
+        return new Set([moves[0].ply]);
+      }
+      return new Set();
+    });
+    setIsAutoPlaying(false);
+    if (autoEvaluateFirst && moves.length) {
+      requestEvaluation(moves[0]);
+    }
   };
 
   const handleAnalyze = async () => {
@@ -143,7 +187,7 @@ export default function ReviewPage() {
     let parsedMoves: MoveSnapshot[] = [];
     try {
       parsedMoves = buildTimelineFromPgn(pgnInput);
-      bootstrapTimeline(parsedMoves);
+      bootstrapTimeline(parsedMoves, true);
     } catch (err: any) {
       setInputError(err.message || "Invalid PGN");
       return;
@@ -185,6 +229,12 @@ export default function ReviewPage() {
     setCurrentMoveIndex(index);
     if (index >= 0) {
       const move = timeline[index];
+      setReviewedPlies((prev) => {
+        if (prev.has(move.ply)) return prev;
+        const next = new Set(prev);
+        next.add(move.ply);
+        return next;
+      });
       const state = moveEvaluations[move.ply];
       if (!state || state.status === "idle") {
         requestEvaluation(move);
@@ -219,9 +269,16 @@ export default function ReviewPage() {
     }
   };
 
+  const handleToggleAutoPlay = () => {
+    if (!timeline.length) return;
+    setIsAutoPlaying((prev) => !prev);
+  };
+
   const evaluatedMoves = useMemo(() => {
-    return timeline.filter((move) => moveEvaluations[move.ply]?.status === "success").slice(-6).reverse();
-  }, [timeline, moveEvaluations]);
+    return timeline.filter(
+      (move) => reviewedPlies.has(move.ply) && moveEvaluations[move.ply]?.status === "success"
+    );
+  }, [timeline, moveEvaluations, reviewedPlies]);
 
   const atEnd = currentMoveIndex >= timeline.length - 1;
 
@@ -316,50 +373,73 @@ export default function ReviewPage() {
           {/* Interactive board & move list */}
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-semibold text-gray-800">Interactive Board</h2>
-                <span className="text-sm text-gray-500">
-                  {currentMoveIndex >= 0 ? `Move ${timeline[currentMoveIndex]?.moveNumber}` : "Start position"}
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-semibold text-gray-800">Interactive Board</h2>
+                  <span className="text-sm text-gray-500">
+                    {currentMoveIndex >= 0 ? `Move ${timeline[currentMoveIndex]?.moveNumber}` : "Start position"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setBoardOrientation((prev) => (prev === "white" ? "black" : "white"))}
+                  aria-label="Flip board"
+                  className="p-2 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 transition flex items-center justify-center"
+                >
+                  <span className="text-lg">⟳</span>
+                </button>
               </div>
               <div className="flex justify-center">
                 <Chessboard
                   position={boardPosition}
                   boardWidth={boardSize}
+                  boardOrientation={boardOrientation}
                   arePiecesDraggable={false}
                   customDarkSquareStyle={{ backgroundColor: "#2d3436" }}
                   customLightSquareStyle={{ backgroundColor: "#f0f0f0" }}
                   customBoardStyle={{ borderRadius: "1.5rem" }}
                 />
               </div>
-              <div className="flex flex-wrap gap-2 justify-between">
+              <div className="flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleSelectMove(0)}
+                    className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    disabled={!timeline.length}
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={() => handleSelectMove(Math.max(currentMoveIndex - 1, -1))}
+                    className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    disabled={timeline.length === 0 || currentMoveIndex <= 0}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => handleSelectMove(Math.min(currentMoveIndex + 1, timeline.length - 1))}
+                    className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    disabled={timeline.length === 0 || atEnd}
+                  >
+                    Next
+                  </button>
+                  <button
+                    onClick={() => handleSelectMove(timeline.length - 1)}
+                    className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    disabled={!timeline.length}
+                  >
+                    Last
+                  </button>
+                </div>
                 <button
-                  onClick={() => handleSelectMove(0)}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                  onClick={handleToggleAutoPlay}
+                  className={`px-3 py-1 rounded-lg border text-sm font-medium transition ${
+                    isAutoPlaying
+                      ? "border-[#00bfa6] text-[#00bfa6] bg-[#00bfa6]/10"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-100"
+                  } disabled:opacity-40`}
                   disabled={!timeline.length}
                 >
-                  First
-                </button>
-                <button
-                  onClick={() => handleSelectMove(Math.max(currentMoveIndex - 1, -1))}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-                  disabled={timeline.length === 0 || currentMoveIndex <= 0}
-                >
-                  Prev
-                </button>
-                <button
-                  onClick={() => handleSelectMove(Math.min(currentMoveIndex + 1, timeline.length - 1))}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-                  disabled={timeline.length === 0 || atEnd}
-                >
-                  Next
-                </button>
-                <button
-                  onClick={() => handleSelectMove(timeline.length - 1)}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-                  disabled={!timeline.length}
-                >
-                  Last
+                  {isAutoPlaying ? "Pause" : "Play All"}
                 </button>
               </div>
             </div>
@@ -443,33 +523,70 @@ export default function ReviewPage() {
                 Live evaluations ({evaluatedMoves.length})
               </span>
             </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              {qualityOverviewCards(qualityStats).map((card) => (
+                <div
+                  key={card.title}
+                  className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-3 text-center"
+                >
+                  <p className="text-xs uppercase tracking-wide text-gray-500">{card.title}</p>
+                  <p className={`text-2xl font-bold ${card.accent}`}>{card.value}</p>
+                </div>
+              ))}
+            </div>
             {evaluatedMoves.length ? (
-              <ul className="space-y-3">
-                {evaluatedMoves.map((move) => {
-                  const evalState = moveEvaluations[move.ply];
-                  if (evalState?.status !== "success") return null;
-                  return (
-                    <li
-                      key={move.ply}
-                      className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 flex flex-col gap-1"
-                    >
-                      <span className="text-xs uppercase tracking-wide text-gray-500">
-                        Move {move.moveNumber} • {move.color === "white" ? "White" : "Black"}
-                      </span>
-                      <div className="flex flex-wrap items-center gap-4 text-sm">
-                        <span className="font-semibold text-gray-800">{move.san}</span>
-                        <span className="text-[#00bfa6] font-mono">{formatScore(evalState.evaluation.score)}</span>
-                        <span className="text-gray-500">Best: {evalState.evaluation.bestMove || "—"}</span>
-                      </div>
-                      {evalState.evaluation.pv.length > 0 && (
-                        <p className="text-xs text-gray-500">
-                          PV: {evalState.evaluation.pv.slice(0, 6).join(" ")}
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 overflow-x-auto">
+                <table className="min-w-full text-sm text-gray-700">
+                  <thead className="text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="text-left px-4 py-3">Move</th>
+                      <th className="text-left px-4 py-3">Played</th>
+                      <th className="text-left px-4 py-3">Quality</th>
+                      <th className="text-left px-4 py-3">Engine Suggestion</th>
+                      <th className="text-right px-4 py-3">Eval (Δ)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evaluatedMoves.map((move) => {
+                      const evalState = moveEvaluations[move.ply];
+                      if (evalState?.status !== "success") return null;
+                      const prevDetail = getPreviousReviewedDetail(move.ply, moveEvaluations, reviewedPlies);
+                      const classification = classifyMove(
+                        move,
+                        evalState.evaluation,
+                        prevDetail.score,
+                        prevDetail.mate
+                      );
+                      const deltaLabel = formatDeltaLabel(classification.delta);
+                      const score = evalState.evaluation.score;
+                      return (
+                        <tr key={move.ply} className="border-t border-gray-200">
+                          <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                            {move.moveNumber}.{move.color === "white" ? "" : ".."}
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-gray-800">{move.san}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${classification.badgeClass}`}
+                            >
+                              {classification.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {evalState.evaluation.bestMove ? formatUciMove(evalState.evaluation.bestMove) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-mono font-semibold text-[#00bfa6]">
+                              {formatScore(score)}
+                            </span>
+                            <span className="text-xs text-gray-500 ml-2">{deltaLabel}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <p className="text-sm text-gray-500">
                 Run an analysis or click through moves on the board to start building a findings list.
@@ -559,6 +676,19 @@ function formatScore(score: EngineScore | null) {
   return value.startsWith("-") ? value : `+${value}`;
 }
 
+function formatDeltaLabel(delta: number | null) {
+  if (delta == null) return "";
+  const symbol = delta >= 0 ? "▲" : "▼";
+  return `${symbol} ${Math.abs(delta).toFixed(2)}`;
+}
+
+function formatUciMove(uci: string) {
+  if (!uci) return "—";
+  return uci.replace(/([a-h]\d)([a-h]\d)([qrbn])?/i, (_, from, to, promo) =>
+    promo ? `${from}-${to}=${promo.toUpperCase()}` : `${from}-${to}`
+  );
+}
+
 function EvaluationDetails({ evaluation }: { evaluation: EngineEvaluation }) {
   return (
     <div className="text-sm text-gray-700 space-y-1">
@@ -576,4 +706,125 @@ function EvaluationDetails({ evaluation }: { evaluation: EngineEvaluation }) {
       )}
     </div>
   );
+}
+
+function classifyMove(
+  move: MoveSnapshot,
+  evaluation: EngineEvaluation,
+  prevWhiteScore: number | null,
+  prevMate: MateDetail | null
+) {
+  const currentScore = getWhiteScore(evaluation);
+  const currentMate = getMateDetail(evaluation);
+
+  let severity: Severity = "good";
+  let delta: number | null = null;
+
+  if (currentScore != null && prevWhiteScore != null) {
+    const diff = currentScore - prevWhiteScore;
+    const perspective = move.color === "white" ? 1 : -1;
+    delta = diff * perspective;
+
+    if (delta <= -2) severity = "blunder";
+    else if (delta <= -1) severity = "mistake";
+    else if (delta <= -0.5) severity = "inaccuracy";
+    else if (delta >= 0.3) severity = "best";
+  }
+
+  if (currentMate) {
+    const deliveredMate = currentMate.moves === 0 && currentMate.winner === move.color;
+    const prevSameWinner = prevMate && prevMate.winner === currentMate.winner ? prevMate : null;
+    const isMoverWinning = currentMate.winner === move.color;
+
+    const introducedMate = isMoverWinning && !prevSameWinner;
+
+    if (deliveredMate || introducedMate || (isMoverWinning && prevSameWinner && currentMate.moves < prevSameWinner.moves)) {
+      severity = "best";
+      delta = delta ?? 0.5;
+    } else if (isMoverWinning && prevSameWinner && currentMate.moves > prevSameWinner.moves) {
+      severity = severity === "best" ? "good" : severity;
+      delta = delta ?? -0.5;
+    }
+  }
+
+  const styleMap: Record<Severity, { label: string; badge: string }> = {
+    best: { label: "Best", badge: "bg-emerald-100 text-emerald-700" },
+    good: { label: "Solid", badge: "bg-blue-100 text-blue-700" },
+    inaccuracy: { label: "Inaccuracy", badge: "bg-amber-100 text-amber-700" },
+    mistake: { label: "Mistake", badge: "bg-orange-100 text-orange-700" },
+    blunder: { label: "Blunder", badge: "bg-red-100 text-red-700" },
+  };
+
+  return { severity, label: styleMap[severity].label, badgeClass: styleMap[severity].badge, delta };
+}
+
+function computeQualityStats(
+  timeline: MoveSnapshot[],
+  evals: Record<number, MoveEvalState>,
+  reviewed: Set<number>
+) {
+  const stats: Record<Severity, number> = {
+    best: 0,
+    good: 0,
+    inaccuracy: 0,
+    mistake: 0,
+    blunder: 0,
+  };
+
+  let prevScore: number | null = null;
+  let prevMate: MateDetail | null = null;
+  timeline.forEach((move) => {
+    if (!reviewed.has(move.ply)) {
+      return;
+    }
+    const state = evals[move.ply];
+    if (state?.status === "success") {
+      const classification = classifyMove(move, state.evaluation, prevScore, prevMate);
+      stats[classification.severity] += 1;
+      prevScore = getWhiteScore(state.evaluation);
+      prevMate = getMateDetail(state.evaluation);
+    }
+  });
+
+  return stats;
+}
+
+function qualityOverviewCards(stats: Record<Severity, number>) {
+  return [
+    { title: "Best", value: stats.best, accent: "text-emerald-600" },
+    { title: "Mistakes", value: stats.mistake, accent: "text-orange-500" },
+    { title: "Blunders", value: stats.blunder, accent: "text-red-500" },
+    { title: "Inaccuracies", value: stats.inaccuracy, accent: "text-amber-500" },
+  ];
+}
+
+function getWhiteScore(evaluation: EngineEvaluation | null): number | null {
+  if (!evaluation?.score) return null;
+  if (evaluation.score.type === "mate") {
+    return evaluation.score.value > 0 ? 100 : -100;
+  }
+  return evaluation.score.value / 100;
+}
+
+function getMateDetail(evaluation: EngineEvaluation | null): MateDetail | null {
+  if (!evaluation?.score || evaluation.score.type !== "mate") return null;
+  return {
+    winner: evaluation.score.value > 0 ? "white" : "black",
+    moves: Math.abs(evaluation.score.value),
+  };
+}
+
+function getPreviousReviewedDetail(
+  ply: number,
+  evalStates: Record<number, MoveEvalState>,
+  reviewedPlies: Set<number>
+): { score: number | null; mate: MateDetail | null } {
+  for (let prev = ply - 1; prev >= 1; prev--) {
+    if (!reviewedPlies.has(prev)) continue;
+    const state = evalStates[prev];
+    if (state?.status === "success") {
+      return { score: getWhiteScore(state.evaluation), mate: getMateDetail(state.evaluation) };
+    }
+  }
+  return { score: null, mate: null };
 }

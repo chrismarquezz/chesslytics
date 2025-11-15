@@ -279,7 +279,9 @@ export default function ReviewPage() {
   const displayedEvaluation =
     currentEval?.status === "success" && currentMove
       ? { evaluation: currentEval.evaluation, fen: currentMove.fen }
-      : lastEvaluationDisplay;
+      : currentMove && lastEvaluationDisplay?.fen === currentMove.fen
+        ? lastEvaluationDisplay
+        : null;
   const currentEvaluationScore = displayedEvaluation?.evaluation.score ?? null;
   const currentEvaluationMateWinner = displayedEvaluation
     ? getMateWinner(currentEvaluationScore, displayedEvaluation.fen)
@@ -904,9 +906,6 @@ function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; 
   return (
     <div className="text-sm text-gray-700 space-y-1">
       <p>
-        Score: <span className="font-semibold text-[#00bfa6]">{formatScore(evaluation.score)}</span>
-      </p>
-      <p>
         Best Move: <span className="font-semibold">{bestMoveSan}</span>
       </p>
       <p>Depth: {evaluation.depth}</p>
@@ -1000,7 +999,10 @@ const BOARD_THEMES: Record<
     label: string;
   }
 > = {
-  modern: { light: "#f0f0f0", dark: "#2d3436", label: "Modern" },
-  wood: { light: "#f3d9b1", dark: "#8c5a2b", label: "Wood" },
+  modern: { light: "#f5f7fa", dark: "#aeb8c2", label: "Modern" },
+  wood: { light: "#f6e8d0", dark: "#c49c6b", label: "Wood" },
   aero: { light: "#e3f2fd", dark: "#90a4ae", label: "Aero" },
+  dusk: { light: "#ede9fe", dark: "#a78bfa", label: "Dusk" },
+  forest: { light: "#e9f5ec", dark: "#8bc9a3", label: "Forest" },
+  ocean: { light: "#e6f7ff", dark: "#7cc0d8", label: "Ocean" },
 };

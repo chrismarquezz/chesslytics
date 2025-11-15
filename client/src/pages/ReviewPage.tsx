@@ -280,6 +280,14 @@ export default function ReviewPage() {
     currentEval?.status === "success" && currentMove
       ? { evaluation: currentEval.evaluation, fen: currentMove.fen }
       : lastEvaluationDisplay;
+  const currentEvaluationScore = displayedEvaluation?.evaluation.score ?? null;
+  const currentEvaluationMateWinner = displayedEvaluation
+    ? getMateWinner(currentEvaluationScore, displayedEvaluation.fen)
+    : undefined;
+  const evaluationPercent = getEvalPercent(currentEvaluationScore, currentEvaluationMateWinner);
+  const evaluationSummary = displayedEvaluation
+    ? describeAdvantage(evaluationPercent, currentEvaluationScore, currentEvaluationMateWinner)
+    : "No evaluation yet.";
 
   const handleLoadSample = () => {
     setPgnInput(SAMPLE_PGN.trim());
@@ -546,6 +554,28 @@ export default function ReviewPage() {
               className={`grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8 ${isClearing ? "fade-out" : "fade-in"}`}
             >
               <div className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-semibold text-gray-600">
+                    <span>White</span>
+                    <span>Black</span>
+                  </div>
+                  <div className="relative h-6 border border-gray-300 rounded overflow-hidden bg-white">
+                    <div className="absolute inset-0 bg-gray-900" />
+                    <div
+                      className="absolute inset-y-0 left-0 bg-white transition-all duration-300"
+                      style={{ width: `${evaluationPercent * 100}%` }}
+                    />
+                    <div className="relative z-10 flex h-full text-xs font-semibold">
+                      <div className="w-1/2 flex items-center pl-2 text-gray-800">
+                        {evaluationPercent >= 0.5 && currentEvaluationScore ? formatScore(currentEvaluationScore) : ""}
+                      </div>
+                      <div className="w-1/2 flex items-center justify-end pr-2 text-white">
+                        {evaluationPercent < 0.5 && currentEvaluationScore ? formatScore(currentEvaluationScore) : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-center text-gray-600">{evaluationSummary}</p>
+                </div>
                 <div className="flex justify-center">
                   <Chessboard
                     position={boardPosition}
@@ -881,20 +911,7 @@ function EvaluationDetails({ evaluation, fen }: { evaluation: EngineEvaluation; 
       </p>
       <p>Depth: {evaluation.depth}</p>
       {/* PV rendering temporarily disabled */}
-      <div className="mt-3 space-y-1">
-        <div className="flex justify-between text-xs text-gray-500">
-          <span>White</span>
-          <span>Black</span>
-        </div>
-        <div className="h-3 rounded-full bg-gradient-to-r from-[#00bfa6] via-white to-black relative">
-          <span
-            className="absolute top-1/2 -translate-y-1/2 w-[2px] h-5 bg-gray-800 rounded"
-            style={{ left: `${(1 - percent) * 100}%` }}
-            aria-hidden="true"
-          />
-        </div>
-        <p className="text-xs text-gray-500">{advantageText}</p>
-      </div>
+      <p className="text-xs text-gray-500 pt-2">{advantageText}</p>
     </div>
   );
 }

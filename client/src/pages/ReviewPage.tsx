@@ -64,6 +64,18 @@ interface GameAnalysisResponse {
 }
 
 const API_BASE_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:5100";
+const REVIEW_STORAGE_KEY = "chesslytics-review-state";
+
+interface PersistedReviewState {
+  pgnInput: string;
+  timeline: MoveSnapshot[];
+  moveEvaluations: Record<number, MoveEvalState>;
+  currentMoveIndex: number;
+  analysisReady: boolean;
+  lastEvaluationDisplay: { evaluation: EngineEvaluation; fen?: string } | null;
+  boardOrientation: "white" | "black";
+  showBestMoveArrow: boolean;
+}
 const SAMPLE_PGN = `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2024.01.15"]
@@ -108,6 +120,7 @@ export default function ReviewPage() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [showBestMoveArrow, setShowBestMoveArrow] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
 
   const initialFen = useMemo(() => new Chess().fen(), []);
 
@@ -132,6 +145,56 @@ export default function ReviewPage() {
       setIsAutoPlaying(false);
     }
   }, [timeline.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const stored = JSON.parse(raw) as PersistedReviewState;
+      setPgnInput(stored.pgnInput ?? "");
+      setTimeline(stored.timeline ?? []);
+      setMoveEvaluations(stored.moveEvaluations ?? {});
+      setCurrentMoveIndex(stored.currentMoveIndex ?? -1);
+      setAnalysisReady(Boolean(stored.analysisReady && stored.timeline?.length));
+      setLastEvaluationDisplay(stored.lastEvaluationDisplay ?? null);
+      setBoardOrientation(stored.boardOrientation ?? "white");
+      setShowBestMoveArrow(stored.showBestMoveArrow ?? true);
+      if (stored.analysisReady && stored.timeline?.length) {
+        setAnalysisKey((prev) => prev + 1);
+      }
+    } catch {
+      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!analysisReady && !timeline.length && !pgnInput) {
+      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+      return;
+    }
+    const payload: PersistedReviewState = {
+      pgnInput,
+      timeline,
+      moveEvaluations,
+      currentMoveIndex,
+      analysisReady,
+      lastEvaluationDisplay,
+      boardOrientation,
+      showBestMoveArrow,
+    };
+    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(payload));
+  }, [
+    analysisReady,
+    timeline,
+    moveEvaluations,
+    currentMoveIndex,
+    lastEvaluationDisplay,
+    boardOrientation,
+    showBestMoveArrow,
+    pgnInput,
+  ]);
 
 
   const boardPosition =
@@ -248,6 +311,33 @@ export default function ReviewPage() {
       }));
     }
   }, []);
+
+  const resetReviewState = useCallback(() => {
+    setAnalysisReady(false);
+    setTimeline([]);
+    setCurrentMoveIndex(-1);
+    setMoveEvaluations({});
+    setLastEvaluationDisplay(null);
+    setIsAutoPlaying(false);
+    setPgnInput("");
+    setAnalysisError(null);
+    setInputError(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+    }
+  }, []);
+
+  const handleStartNewReview = useCallback(() => {
+    if (analysisReady) {
+      setIsClearing(true);
+      setTimeout(() => {
+        resetReviewState();
+        setIsClearing(false);
+      }, 350);
+    } else {
+      resetReviewState();
+    }
+  }, [analysisReady, resetReviewState]);
 
   const bootstrapTimeline = (moves: MoveSnapshot[], autoEvaluateFirst = false) => {
     setTimeline(moves);
@@ -423,6 +513,14 @@ export default function ReviewPage() {
                   Paste your PGN, replay moves on the board, and let Stockfish surface insights as you go.
                 </p>
               </div>
+              {analysisReady && (
+                <button
+                  onClick={handleStartNewReview}
+                  className="self-start sm:self-auto px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
+                >
+                  Load New PGN
+                </button>
+              )}
               {/* Timeline/Insights tabs hidden for now */}
             </div>
           </header>
@@ -443,7 +541,10 @@ export default function ReviewPage() {
           )}
 
           {analysisReady && selectedView === "analysis" && (
-            <section key={analysisKey} className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8 fade-in">
+            <section
+              key={analysisKey}
+              className={`grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-8 ${isClearing ? "fade-out" : "fade-in"}`}
+            >
               <div className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
                 <div className="flex justify-center">
                   <Chessboard

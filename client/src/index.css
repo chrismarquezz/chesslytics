@@ -14,3 +14,18 @@
 .fade-in {
   animation: fadeInUp 0.4s ease forwards;
 }
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.fade-out {
+  animation: fadeOutDown 0.35s ease forwards;
+}

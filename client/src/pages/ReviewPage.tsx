@@ -90,14 +90,13 @@ const SAMPLE_PGN = `[Event "Live Chess"]
 [Round "-"]
 [White "SamplePlayer"]
 [Black "Opponent"]
-[Result "1-0"]
+[Result "0-1"]
 
-1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O
-9. h3 Nb8 10. d4 Nbd7 11. c4 c6 12. Nc3 Bb7 13. cxb5 axb5 14. Bg5 b4 15. Na4 c5
-16. dxe5 Nxe4 17. Bxe7 Qxe7 18. exd6 Qf6 19. Bd5 Bxd5 20. Qxd5 Nxd6 21. Nxc5 Nb6
-22. Qc6 Nbc4 23. Nd7 Qxb2 24. Nxf8 Rxf8 25. Reb1 Qf6 26. Rd1 Rc8 27. Qa6 Qe7
-28. Rac1 h6 29. Nd4 Qg5 30. Nc6 Re8 31. Rxc4 Nxc4 32. Qxc4 Qh5 33. Rd5 Re1+ 34. Kh2 Qd1
-35. Rxd1 Rxd1 36. Ne7+ Kh7 37. Qxf7 1-0`;
+1. d4 d5 2. Nc3 Nf6 3. Bf4 c6 4. e3 Bf5 5. f3 e6 6. g4 Bg6 7. h4 h5 8. g5 Nfd7
+9. Bd3 Bxd3 10. Qxd3 c5 11. g6 c4 12. gxf7+ Kxf7 13. Qf1 Nc6 14. O-O-O Qa5
+15. e4 Bb4 16. Nge2 Rhf8 17. Rg1 Nxd4 18. Rxd4 e5 19. Rxd5 Qc7 20. Bg5 Nb6
+21. Rd1 a5 22. Nd5 Nxd5 23. Rxd5 c3 24. b3 a4 25. Rb5 axb3 26. cxb3 Rxa2
+27. Kb1 Rfa8 28. Qg2 Rb2+ 29. Kc1 Ra1# 0-1`;
 
 export default function ReviewPage() {
   const [pgnInput, setPgnInput] = useState("");
@@ -988,14 +987,13 @@ function EngineLines({ evaluation, fen }: { evaluation: EngineEvaluation; fen?: 
       ]
   ).slice(0, 3);
 
-  const mateResult =
+  const mateWinner =
     evaluation.score?.type === "mate" && evaluation.score.value === 0
-      ? evaluation.score.value >= 0
-        ? "1-0"
-        : "0-1"
-      : null;
-  if (mateResult) {
-    const winnerText = evaluation.score!.value >= 0 ? "Checkmate for White" : "Checkmate for Black";
+      ? getMateWinner(evaluation.score, fen)
+      : undefined;
+  if (mateWinner) {
+    const mateResult = mateWinner === "White" ? "1-0" : "0-1";
+    const winnerText = `Checkmate for ${mateWinner}`;
     return (
       <div className="text-center">
         <p className="text-3xl font-bold text-gray-900">{mateResult}</p>

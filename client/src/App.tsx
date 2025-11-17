@@ -38,7 +38,9 @@ export default function App() {
 
   const handleAnalyzeGame = (game: any) => {
     if (!game?.pgn) return;
-    navigate("/review", { state: { pgn: game.pgn } });
+    const whiteName = game.white?.username ?? "White";
+    const blackName = game.black?.username ?? "Black";
+    navigate("/review", { state: { pgn: game.pgn, players: { white: whiteName, black: blackName } } });
   };
 
   const displayedGames = useMemo(() => games.slice(0, visibleGamesCount), [games, visibleGamesCount]);
@@ -130,7 +132,7 @@ export default function App() {
                       </div>
                       <button
                         className="mt-auto inline-flex items-center justify-center rounded-lg border border-gray-300 text-gray-700 font-semibold px-4 py-2 hover:bg-gray-50 transition"
-                        onClick={() => handleAnalyzeGame(game)}
+                        onClick={() => handleAnalyzeGame(game, timeLabel)}
                       >
                         Analyze
                       </button>

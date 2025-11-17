@@ -34,6 +34,8 @@ type View = "analysis" | "timeline" | "insights";
 
 const API_BASE_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:5100";
 const REVIEW_STORAGE_KEY = "chesslytics-review-state";
+const PLAYER_NAMES_STORAGE_KEY = "chesslytics-player-names";
+const PLAYER_CLOCK_STORAGE_KEY = "chesslytics-player-clock";
 
 interface PersistedReviewState {
   pgnInput: string;
@@ -63,7 +65,25 @@ export default function ReviewPage() {
   const [pgnInput, setPgnInput] = useState("");
   const [selectedView, setSelectedView] = useState<View>("analysis");
   const [timeline, setTimeline] = useState<MoveSnapshot[]>([]);
-  const [playerNames, setPlayerNames] = useState({ white: "White", black: "Black" });
+  const [playerNames, setPlayerNames] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = window.localStorage.getItem(PLAYER_NAMES_STORAGE_KEY);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          return { white: "White", black: "Black" };
+        }
+      }
+    }
+    return { white: "White", black: "Black" };
+  });
+  const [playerClock, setPlayerClock] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return window.localStorage.getItem(PLAYER_CLOCK_STORAGE_KEY);
+    }
+    return null;
+  });
   const [currentMoveIndex, setCurrentMoveIndex] = useState<number>(-1);
   const [moveEvaluations, setMoveEvaluations] = useState<Record<number, MoveEvalState>>({});
   const [bookStatusByPly, setBookStatusByPly] = useState<Record<number, BookMoveStatus | undefined>>({});
@@ -169,6 +189,16 @@ export default function ReviewPage() {
       showBestMoveArrow,
     };
     window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(payload));
+    if (playerNames.white !== "White" || playerNames.black !== "Black") {
+      window.localStorage.setItem(PLAYER_NAMES_STORAGE_KEY, JSON.stringify(playerNames));
+    } else {
+      window.localStorage.removeItem(PLAYER_NAMES_STORAGE_KEY);
+    }
+    if (playerClock) {
+      window.localStorage.setItem(PLAYER_CLOCK_STORAGE_KEY, playerClock);
+    } else {
+      window.localStorage.removeItem(PLAYER_CLOCK_STORAGE_KEY);
+    }
   }, [
     analysisReady,
     timeline,
@@ -178,12 +208,17 @@ export default function ReviewPage() {
     boardOrientation,
     showBestMoveArrow,
     pgnInput,
+    playerNames,
+    playerClock,
   ]);
 
 
   const boardPosition =
     currentMoveIndex >= 0 && timeline[currentMoveIndex] ? timeline[currentMoveIndex].fen : initialFen;
   const boardCardWidth = Math.max(boardSize + 48, 360);
+
+  const whiteHeaderLabel = playerClock ? `${playerNames.white} (${playerClock})` : playerNames.white;
+  const blackHeaderLabel = playerClock ? `${playerNames.black} (${playerClock})` : playerNames.black;
 
   const movePairs = useMemo<MovePair[]>(() => {
     const pairs: MovePair[] = [];
@@ -349,6 +384,7 @@ export default function ReviewPage() {
   }, []);
 
   const resetReviewState = useCallback(() => {
+    setPlayerClock(null);
     setAnalysisReady(false);
     setTimeline([]);
     setCurrentMoveIndex(-1);
@@ -437,7 +473,10 @@ export default function ReviewPage() {
         setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
         setAnalysisReady(true);
       setAnalysisKey((prev) => prev + 1);
-      setPlayerNames(getPlayerNamesFromPgn(trimmed));
+      const extractedNames = getPlayerNamesFromPgn(trimmed);
+      if (extractedNames.white !== "White" || extractedNames.black !== "Black") {
+        setPlayerNames(extractedNames);
+      }
       } catch (err) {
         setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
       } finally {
@@ -448,11 +487,21 @@ export default function ReviewPage() {
   );
 
   const handleAnalyze = () => {
+    setPlayerClock(null);
     void runAnalysis(pgnInput);
   };
 
   useEffect(() => {
-    const state = location.state as { pgn?: string } | null;
+    const state = location.state as { pgn?: string; players?: { white: string; black: string }; clock?: string | null } | null;
+    if (state?.players) {
+      setPlayerNames({
+        white: state.players.white || "White",
+        black: state.players.black || "Black",
+      });
+    }
+    if (typeof state?.clock !== "undefined") {
+      setPlayerClock(state.clock || null);
+    }
     if (state?.pgn) {
       void runAnalysis(state.pgn);
       navigate(".", { replace: true, state: null });
@@ -599,6 +648,7 @@ export default function ReviewPage() {
       const updates: Record<number, BookMoveStatus> = {};
       let prevFen = initialFen;
       let exited = false;
+      let lastOpening: { eco?: string; name?: string } | undefined;
       for (let i = 0; i < timeline.length; i++) {
         const move = timeline[i];
         if (exited) {
@@ -611,22 +661,23 @@ export default function ReviewPage() {
         const match = prevPosition?.moves?.find((bm) => bm.uci === moveUci);
         const currentPosition = await fetchBookPosition(move.fen);
         if (cancelled) return;
-        const hasOpeningName = Boolean(currentPosition?.opening?.name);
-        if (!match || !hasOpeningName) {
+        const currentOpening = currentPosition?.opening ?? prevPosition?.opening ?? lastOpening;
+        if (!match) {
           updates[move.ply] = {
             inBook: false,
-            eco: currentPosition?.opening?.eco ?? prevPosition?.opening?.eco,
-            opening: currentPosition?.opening?.name ?? prevPosition?.opening?.name,
+            eco: currentOpening?.eco,
+            opening: currentOpening?.name,
           };
           exited = true;
           continue;
         }
         updates[move.ply] = {
           inBook: true,
-          eco: currentPosition?.opening?.eco ?? prevPosition?.opening?.eco,
-          opening: currentPosition?.opening?.name ?? prevPosition?.opening?.name,
+          eco: currentOpening?.eco,
+          opening: currentOpening?.name,
           moveStats: match,
         };
+        lastOpening = currentOpening;
         prevFen = move.fen;
       }
       if (!cancelled) {
@@ -703,10 +754,9 @@ export default function ReviewPage() {
                     boardOrientation={boardOrientation}
                     boardColors={BOARD_THEMES[boardTheme]}
                     evaluationPercent={evaluationPercent}
-                    evaluationSummary={evaluationSummary}
                     currentEvaluationScore={currentEvaluationScore}
-                    whiteLabel={playerNames.white}
-                    blackLabel={playerNames.black}
+                    whiteLabel={whiteHeaderLabel}
+                    blackLabel={blackHeaderLabel}
                     bestMoveArrows={bestMoveArrows}
                     timelineLength={timeline.length}
                     currentMoveIndex={currentMoveIndex}
@@ -743,10 +793,9 @@ export default function ReviewPage() {
                   boardOrientation={boardOrientation}
                   boardColors={BOARD_THEMES[boardTheme]}
                   evaluationPercent={evaluationPercent}
-                  evaluationSummary={evaluationSummary}
                   currentEvaluationScore={currentEvaluationScore}
-                  whiteLabel={playerNames.white}
-                  blackLabel={playerNames.black}
+                  whiteLabel={whiteHeaderLabel}
+                  blackLabel={blackHeaderLabel}
                   bestMoveArrows={bestMoveArrows}
                   timelineLength={timeline.length}
                   currentMoveIndex={currentMoveIndex}
@@ -868,6 +917,29 @@ function getPlayerNamesFromPgn(pgn: string): { white: string; black: string } {
     white: whiteMatch?.[1]?.trim() || "White",
     black: blackMatch?.[1]?.trim() || "Black",
   };
+}
+
+function getClockFromPgn(pgn: string): string | null {
+  const match = pgn.match(/\[TimeControl\s+"([^"]+)"\]/i);
+  if (!match) return null;
+  return formatClockDisplay(match[1]);
+}
+
+function formatClockDisplay(control?: string | null): string | null {
+  if (!control || control === "-") return null;
+  const [baseStr, incStr] = control.split("+");
+  const baseSeconds = Number(baseStr) || 0;
+  const increment = incStr ? Number(incStr) : 0;
+  const minutes = Math.floor(baseSeconds / 60);
+  const seconds = baseSeconds % 60;
+  let baseLabel = "";
+  if (minutes > 0) {
+    baseLabel = seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  } else {
+    baseLabel = `${seconds}s`;
+  }
+  const incLabel = increment ? ` + ${increment}s` : "";
+  return `${baseLabel}${incLabel}`;
 }
 
 const BOARD_THEMES: Record<

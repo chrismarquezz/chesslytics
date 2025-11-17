@@ -33,7 +33,7 @@ export async function fetchBookMoves(fen: string, limit = 8): Promise<ExplorerRe
   }
 
   const movesParam = Math.max(3, Math.min(limit, 15));
-  const url = `https://explorer.lichess.ovh/lichess?variant=standard&speeds[]=blitz&speeds[]=rapid&speeds[]=classical&fen=${encodeURIComponent(fen)}&topGames=0&moves=${movesParam}`;
+  const url = `https://explorer.lichess.ovh/masters?fen=${encodeURIComponent(fen)}&topGames=0&moves=${movesParam}`;
 
   const response = await axios.get(url, { timeout: 5000 });
   const data = response.data ?? {};

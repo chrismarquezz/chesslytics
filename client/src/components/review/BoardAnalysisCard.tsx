@@ -10,7 +10,6 @@ interface BoardAnalysisCardProps {
   boardOrientation: "white" | "black";
   boardColors: { light: string; dark: string };
   evaluationPercent: number;
-  evaluationSummary: string;
   currentEvaluationScore: EngineScore | null;
   whiteLabel?: string;
   blackLabel?: string;
@@ -33,7 +32,6 @@ export default function BoardAnalysisCard({
   boardOrientation,
   boardColors,
   evaluationPercent,
-  evaluationSummary,
   currentEvaluationScore,
   whiteLabel,
   blackLabel,
@@ -59,7 +57,6 @@ export default function BoardAnalysisCard({
     >
       <EvaluationBar
         evaluationPercent={evaluationPercent}
-        evaluationSummary={evaluationSummary}
         currentEvaluationScore={currentEvaluationScore}
         whiteLabel={whiteLabel}
         blackLabel={blackLabel}

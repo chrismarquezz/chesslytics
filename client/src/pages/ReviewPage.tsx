@@ -714,12 +714,6 @@ export default function ReviewPage() {
                     onToggleBestMoveArrow={() => setShowBestMoveArrow((prev) => !prev)}
                     onOpenThemeModal={() => setIsThemeModalOpen(true)}
                   />
-                  <button
-                    onClick={handleStartNewReview}
-                    className="px-6 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
-                  >
-                    Load New PGN
-                  </button>
                 </div>
                 <div className="flex flex-col gap-6">
                   <MoveQualityCard
@@ -758,12 +752,6 @@ export default function ReviewPage() {
                   onToggleBestMoveArrow={() => setShowBestMoveArrow((prev) => !prev)}
                   onOpenThemeModal={() => setIsThemeModalOpen(true)}
                 />
-                <button
-                  onClick={handleStartNewReview}
-                  className="px-6 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
-                >
-                  Load New PGN
-                </button>
               </div>
 
               <div className="xl:hidden space-y-6 mt-8">

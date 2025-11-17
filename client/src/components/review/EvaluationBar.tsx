@@ -9,7 +9,6 @@ interface EvaluationBarProps {
 
 export default function EvaluationBar({
   evaluationPercent,
-  evaluationSummary,
   currentEvaluationScore,
 }: EvaluationBarProps) {
   return (
@@ -33,7 +32,6 @@ export default function EvaluationBar({
           </div>
         </div>
       </div>
-      <p className="text-xs text-center text-gray-600">{evaluationSummary}</p>
     </div>
   );
 }

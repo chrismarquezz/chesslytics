@@ -17,7 +17,6 @@ export default function App() {
     stats,
     userDataLoading,
     userDataError,
-    fetchUserData,
   } = useUser();
   const navigate = useNavigate();
   const [pendingUsername, setPendingUsername] = useState(username);
@@ -35,7 +34,6 @@ export default function App() {
     const target = pendingUsername.trim();
     if (!target) return;
     setUsername(target);
-    void fetchUserData(target);
   };
 
   const handleAnalyzeGame = (game: any) => {

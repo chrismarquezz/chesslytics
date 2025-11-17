@@ -22,13 +22,12 @@ export default function MoveQualityCard({ move, classification, awaitingEvaluati
     <div className="bg-white rounded-2xl border border-gray-200 shadow p-5">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-xs uppercase tracking-wide text-gray-500">Current move</p>
           <p className="text-lg font-semibold text-gray-900">
             {move ? `${move.moveNumber}. ${move.san}` : "No move selected"}
           </p>
         </div>
         {isBookMove ? (
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-200 text-amber-900">Book</span>
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#7b4a24] text-white">Book</span>
         ) : label ? (
           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${styles?.badge || ""}`}>{label}</span>
         ) : (
@@ -38,11 +37,10 @@ export default function MoveQualityCard({ move, classification, awaitingEvaluati
 
       {move ? (
         isBookMove ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <p className="text-sm font-semibold text-amber-900">
+          <div className="rounded-xl border border-[#d7b48c] bg-[#f4e5d4] p-4">
+            <p className="text-sm font-semibold text-[#5c3b1f]">
               This move follows the book line{bookStatus?.opening ? `: ${bookStatus.opening}` : ""}.
             </p>
-            {bookStatus?.eco && <p className="text-xs text-amber-800 mt-1">ECO {bookStatus.eco}</p>}
           </div>
         ) : label ? (
           <div

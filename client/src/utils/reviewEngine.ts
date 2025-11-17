@@ -195,9 +195,9 @@ const MOVE_QUALITY_RULES: Array<{
   description: string;
 }> = [
   { maxLoss: 20, label: "Best", description: "Top engine choice keeps the evaluation." },
-  { maxLoss: 80, label: "Good", description: "Solid move with only a slight drop in evaluation." },
-  { maxLoss: 200, label: "Inaccuracy", description: "A softer move that gives the opponent chances." },
-  { maxLoss: 400, label: "Mistake", description: "Significant drop; the position worsens noticeably." },
+  { maxLoss: 50, label: "Good", description: "Solid move with only a slight drop in evaluation." },
+  { maxLoss: 99, label: "Inaccuracy", description: "A softer move that gives the opponent chances." },
+  { maxLoss: 300, label: "Mistake", description: "Significant drop; the position worsens noticeably." },
   { maxLoss: Infinity, label: "Blunder", description: "Major error that swings the evaluation sharply." },
 ];
 
@@ -208,6 +208,8 @@ export function classifyMoveQuality({
   previousFen,
   currentFen,
   forcedMove,
+  previousMoveQuality,
+  previousMoverColor,
 }: {
   previousScore: EngineScore | null;
   currentScore: EngineScore | null;
@@ -215,6 +217,8 @@ export function classifyMoveQuality({
   previousFen?: string;
   currentFen?: string;
   forcedMove?: boolean;
+  previousMoveQuality?: MoveQuality | null;
+  previousMoverColor?: "white" | "black";
 }): MoveQuality | null {
   if (forcedMove) {
     return {
@@ -227,6 +231,9 @@ export function classifyMoveQuality({
   if (!currentScore) return null;
 
   const moverLabel = mover === "white" ? "White" : "Black";
+  const prevCpScore = scoreToCentipawns(previousScore);
+  const currCpScore = scoreToCentipawns(currentScore);
+
 
   if (currentScore.type === "mate") {
     if (currentScore.value === 0) {
@@ -274,8 +281,8 @@ export function classifyMoveQuality({
     };
   }
 
-  const prevCp = scoreToCentipawns(previousScore);
-  const currCp = scoreToCentipawns(currentScore);
+  const prevCp = prevCpScore;
+  const currCp = currCpScore;
   if (prevCp == null || currCp == null) return null;
   const factor = mover === "white" ? 1 : -1;
   const prevPerspective = prevCp * factor;

@@ -1,5 +1,4 @@
 import type { BookMoveStatus, MoveQuality, MoveSnapshot } from "../../types/review";
-import { MOVE_QUALITY_STYLES } from "../../constants/moveQualityStyles";
 
 export interface MovePair {
   moveNumber: number;
@@ -40,15 +39,6 @@ export default function MoveListCard({
       >
         <div className="flex items-center justify-center gap-2">
           <span>{move.san}</span>
-          {bookStatus?.inBook ? (
-            <span className="px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full bg-amber-200 text-amber-900">
-              Book
-            </span>
-          ) : classification ? (
-            <span className={`px-2 py-0.5 text-[10px] font-semibold uppercase rounded-full ${MOVE_QUALITY_STYLES[classification.label].badge}`}>
-              {classification.label}
-            </span>
-          ) : null}
         </div>
       </button>
     );

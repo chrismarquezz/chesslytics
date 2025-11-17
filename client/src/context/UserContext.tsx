@@ -26,8 +26,15 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+const USERNAME_STORAGE_KEY = "chesslytics-username";
+
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [username, setUsername] = useState("");
+  const [username, setUsernameState] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.localStorage.getItem(USERNAME_STORAGE_KEY) ?? "";
+    }
+    return "";
+  });
   const [games, setGames] = useState<any[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
@@ -40,6 +47,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
   });
   const [userDataLoading, setUserDataLoading] = useState(false);
   const [userDataError, setUserDataError] = useState<string | null>(null);
+
+  const persistedSetUsername = useCallback((value: string) => {
+    setUsernameState(value);
+    if (typeof window !== "undefined") {
+      if (value.trim()) {
+        window.localStorage.setItem(USERNAME_STORAGE_KEY, value.trim());
+      } else {
+        window.localStorage.removeItem(USERNAME_STORAGE_KEY);
+      }
+    }
+  }, []);
 
   const fetchGames = useCallback(async () => {
     if (!username.trim()) {
@@ -105,11 +123,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
     void fetchGames();
   }, [fetchGames]);
 
+  useEffect(() => {
+    if (username.trim()) {
+      void fetchUserData(username);
+    }
+  }, [username, fetchUserData]);
+
   return (
     <UserContext.Provider
       value={{
         username,
-        setUsername,
+        setUsername: persistedSetUsername,
         games,
         gamesLoading,
         gamesError,

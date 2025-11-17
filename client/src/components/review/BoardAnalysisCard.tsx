@@ -46,9 +46,13 @@ export default function BoardAnalysisCard({
   onOpenThemeModal,
 }: BoardAnalysisCardProps) {
   const hasMoves = timelineLength > 0;
+  const cardWidth = boardWidth + 48;
 
   return (
-    <div className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
+    <div
+      className="bg-white shadow-lg rounded-2xl border border-gray-200 p-6 flex flex-col gap-4 mx-auto"
+      style={{ width: Math.max(cardWidth, 360) }}
+    >
       <EvaluationBar
         evaluationPercent={evaluationPercent}
         evaluationSummary={evaluationSummary}

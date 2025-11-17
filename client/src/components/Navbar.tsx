@@ -6,7 +6,6 @@ export default function Navbar() {
 
   const links = [
     { to: "/", label: "Stats" },
-    { to: "/games", label: "Games" },
     { to: "/review", label: "Review" },
     // { to: "/compare", label: "Compare" },
   ];

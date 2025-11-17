@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Chess, type Square } from "chess.js";
 import Navbar from "../components/Navbar";
 import GameInputCard from "../components/review/GameInputCard";
@@ -90,6 +91,8 @@ export default function ReviewPage() {
   const [showBestMoveArrow, setShowBestMoveArrow] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const bookCacheRef = useRef<Record<string, BookPositionInfo | null>>({});
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const initialFen = useMemo(() => new Chess().fen(), []);
   const startingSnapshot = useMemo<MoveSnapshot>(
@@ -179,6 +182,7 @@ export default function ReviewPage() {
 
   const boardPosition =
     currentMoveIndex >= 0 && timeline[currentMoveIndex] ? timeline[currentMoveIndex].fen : initialFen;
+  const boardCardWidth = Math.max(boardSize + 48, 360);
 
   const movePairs = useMemo<MovePair[]>(() => {
     const pairs: MovePair[] = [];
@@ -372,7 +376,7 @@ export default function ReviewPage() {
     }
   }, [analysisReady, resetReviewState]);
 
-  const bootstrapTimeline = (moves: MoveSnapshot[], autoEvaluateFirst = false) => {
+  const bootstrapTimeline = useCallback((moves: MoveSnapshot[], autoEvaluateFirst = false) => {
     setTimeline(moves);
     setCurrentMoveIndex(moves.length ? 0 : -1);
     const map: Record<number, MoveEvalState> = {};
@@ -387,53 +391,70 @@ export default function ReviewPage() {
     if (autoEvaluateFirst && moves.length) {
       requestEvaluation(moves[0]);
     }
-  };
+  }, [requestEvaluation]);
 
-  const handleAnalyze = async () => {
-    if (!pgnInput.trim()) return;
-    setInputError(null);
-    setAnalysisError(null);
+  const runAnalysis = useCallback(
+    async (rawPgn: string) => {
+      const trimmed = rawPgn.trim();
+      if (!trimmed) return;
+      setInputError(null);
+      setAnalysisError(null);
 
-    let parsedMoves: MoveSnapshot[] = [];
-    try {
-      parsedMoves = buildTimelineFromPgn(pgnInput);
-    } catch (err) {
-      setInputError(getErrorMessage(err, "Invalid PGN"));
-      return;
-    }
-
-    if (!parsedMoves.length) {
-      setInputError("Game must contain at least one move");
-      return;
-    }
-
-    setAnalysisLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/review/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pgn: pgnInput,
-          depth: 16,
-          samples: Math.min(parsedMoves.length, 10),
-        }),
-      });
-      const payload: GameAnalysisResponse | { error: string } = await response.json();
-      if (!response.ok || "error" in payload) {
-        throw new Error("error" in payload ? payload.error : "Failed to analyze game");
+      let parsedMoves: MoveSnapshot[] = [];
+      try {
+        parsedMoves = buildTimelineFromPgn(trimmed);
+      } catch (err) {
+        setInputError(getErrorMessage(err, "Invalid PGN"));
+        return;
       }
 
-      const timelineResult = payload.timeline ?? parsedMoves;
-      bootstrapTimeline(timelineResult, true);
-      setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
-      setAnalysisReady(true);
-      setAnalysisKey((prev) => prev + 1);
-    } catch (err) {
-      setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
-    } finally {
-      setAnalysisLoading(false);
-    }
+      if (!parsedMoves.length) {
+        setInputError("Game must contain at least one move");
+        return;
+      }
+
+      setPgnInput(trimmed);
+      setAnalysisLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/review/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pgn: trimmed,
+            depth: 16,
+            samples: Math.min(parsedMoves.length, 10),
+          }),
+        });
+        const payload: GameAnalysisResponse | { error: string } = await response.json();
+        if (!response.ok || "error" in payload) {
+          throw new Error("error" in payload ? payload.error : "Failed to analyze game");
+        }
+
+        const timelineResult = payload.timeline ?? parsedMoves;
+        bootstrapTimeline(timelineResult, true);
+        setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
+        setAnalysisReady(true);
+        setAnalysisKey((prev) => prev + 1);
+      } catch (err) {
+        setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
+      } finally {
+        setAnalysisLoading(false);
+      }
+    },
+    [bootstrapTimeline]
+  );
+
+  const handleAnalyze = () => {
+    void runAnalysis(pgnInput);
   };
+
+  useEffect(() => {
+    const state = location.state as { pgn?: string } | null;
+    if (state?.pgn) {
+      void runAnalysis(state.pgn);
+      navigate(".", { replace: true, state: null });
+    }
+  }, [location.state, navigate, runAnalysis]);
 
   const handleSelectMove = useCallback(
     (index: number) => {
@@ -657,9 +678,66 @@ export default function ReviewPage() {
           {analysisReady && selectedView === "analysis" && (
             <section
               key={analysisKey}
-              className={`grid grid-cols-1 xl:grid-cols-[2fr_1fr] items-start gap-8 ${isClearing ? "fade-out" : "fade-in"}`}
+              className={`${isClearing ? "fade-out" : "fade-in"} w-full`}
             >
-              <div className="flex flex-col gap-4">
+              <div
+                className="hidden xl:grid items-start mx-auto"
+                style={{ gridTemplateColumns: `360px ${boardCardWidth}px 360px`, gap: "2rem", justifyContent: "center" }}
+              >
+                <div className="flex flex-col gap-6">
+                  <MoveListCard
+                    movePairs={movePairs}
+                    currentMoveIndex={currentMoveIndex}
+                    onSelectMove={handleSelectMove}
+                    moveClassifications={moveClassifications}
+                    bookStatuses={bookStatusByPly}
+                  />
+                </div>
+                <div className="flex flex-col gap-4 items-center" style={{ width: boardCardWidth }}>
+                  <BoardAnalysisCard
+                    boardPosition={boardPosition}
+                    boardWidth={boardSize}
+                    boardOrientation={boardOrientation}
+                    boardColors={BOARD_THEMES[boardTheme]}
+                    evaluationPercent={evaluationPercent}
+                    evaluationSummary={evaluationSummary}
+                    currentEvaluationScore={currentEvaluationScore}
+                    bestMoveArrows={bestMoveArrows}
+                    timelineLength={timeline.length}
+                    currentMoveIndex={currentMoveIndex}
+                    atEnd={atEnd}
+                    isAutoPlaying={isAutoPlaying}
+                    showBestMoveArrow={showBestMoveArrow}
+                    onSelectMove={handleSelectMove}
+                    onToggleAutoPlay={handleToggleAutoPlay}
+                    onFlipBoard={() => setBoardOrientation((prev) => (prev === "white" ? "black" : "white"))}
+                    onToggleBestMoveArrow={() => setShowBestMoveArrow((prev) => !prev)}
+                    onOpenThemeModal={() => setIsThemeModalOpen(true)}
+                  />
+                  <button
+                    onClick={handleStartNewReview}
+                    className="px-6 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
+                  >
+                    Load New PGN
+                  </button>
+                </div>
+                <div className="flex flex-col gap-6">
+                  <MoveQualityCard
+                    move={currentMove}
+                    classification={currentMoveClassification}
+                    awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
+                    bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
+                  />
+                  <EngineAnalysisCard
+                    engineStatus={engineStatus}
+                    engineError={engineError}
+                    stableEvaluation={stableEvaluation}
+                    currentMoveNumber={currentMove?.moveNumber}
+                  />
+                </div>
+              </div>
+
+              <div className="xl:hidden flex flex-col gap-4 items-center w-full">
                 <BoardAnalysisCard
                   boardPosition={boardPosition}
                   boardWidth={boardSize}
@@ -680,23 +758,15 @@ export default function ReviewPage() {
                   onToggleBestMoveArrow={() => setShowBestMoveArrow((prev) => !prev)}
                   onOpenThemeModal={() => setIsThemeModalOpen(true)}
                 />
-                <div>
-                  <button
-                    onClick={handleStartNewReview}
-                    className="w-full sm:w-auto px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
-                  >
-                    Load New PGN
-                  </button>
-                </div>
+                <button
+                  onClick={handleStartNewReview}
+                  className="px-6 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
+                >
+                  Load New PGN
+                </button>
               </div>
 
-              <div className="flex flex-col gap-6 self-start">
-                <MoveQualityCard
-                  move={currentMove}
-                  classification={currentMoveClassification}
-                  awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
-                  bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
-                />
+              <div className="xl:hidden space-y-6 mt-8">
                 <MoveListCard
                   movePairs={movePairs}
                   currentMoveIndex={currentMoveIndex}
@@ -704,7 +774,12 @@ export default function ReviewPage() {
                   moveClassifications={moveClassifications}
                   bookStatuses={bookStatusByPly}
                 />
-
+                <MoveQualityCard
+                  move={currentMove}
+                  classification={currentMoveClassification}
+                  awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
+                  bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
+                />
                 <EngineAnalysisCard
                   engineStatus={engineStatus}
                   engineError={engineError}

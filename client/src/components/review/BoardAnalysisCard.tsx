@@ -12,6 +12,8 @@ interface BoardAnalysisCardProps {
   evaluationPercent: number;
   evaluationSummary: string;
   currentEvaluationScore: EngineScore | null;
+  whiteLabel?: string;
+  blackLabel?: string;
   bestMoveArrows: Arrow[];
   timelineLength: number;
   currentMoveIndex: number;
@@ -33,6 +35,8 @@ export default function BoardAnalysisCard({
   evaluationPercent,
   evaluationSummary,
   currentEvaluationScore,
+  whiteLabel,
+  blackLabel,
   bestMoveArrows,
   timelineLength,
   currentMoveIndex,
@@ -57,6 +61,8 @@ export default function BoardAnalysisCard({
         evaluationPercent={evaluationPercent}
         evaluationSummary={evaluationSummary}
         currentEvaluationScore={currentEvaluationScore}
+        whiteLabel={whiteLabel}
+        blackLabel={blackLabel}
       />
       <div className="flex justify-center">
         <Chessboard

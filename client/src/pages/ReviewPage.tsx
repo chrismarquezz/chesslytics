@@ -63,6 +63,7 @@ export default function ReviewPage() {
   const [pgnInput, setPgnInput] = useState("");
   const [selectedView, setSelectedView] = useState<View>("analysis");
   const [timeline, setTimeline] = useState<MoveSnapshot[]>([]);
+  const [playerNames, setPlayerNames] = useState({ white: "White", black: "Black" });
   const [currentMoveIndex, setCurrentMoveIndex] = useState<number>(-1);
   const [moveEvaluations, setMoveEvaluations] = useState<Record<number, MoveEvalState>>({});
   const [bookStatusByPly, setBookStatusByPly] = useState<Record<number, BookMoveStatus | undefined>>({});
@@ -354,6 +355,7 @@ export default function ReviewPage() {
     setMoveEvaluations({});
     setBookStatusByPly({});
     bookCacheRef.current = {};
+    setPlayerNames({ white: "White", black: "Black" });
     setLastEvaluationDisplay(null);
     setIsAutoPlaying(false);
     setPgnInput("");
@@ -434,7 +436,8 @@ export default function ReviewPage() {
         bootstrapTimeline(timelineResult, true);
         setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
         setAnalysisReady(true);
-        setAnalysisKey((prev) => prev + 1);
+      setAnalysisKey((prev) => prev + 1);
+      setPlayerNames(getPlayerNamesFromPgn(trimmed));
       } catch (err) {
         setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
       } finally {
@@ -702,6 +705,8 @@ export default function ReviewPage() {
                     evaluationPercent={evaluationPercent}
                     evaluationSummary={evaluationSummary}
                     currentEvaluationScore={currentEvaluationScore}
+                    whiteLabel={playerNames.white}
+                    blackLabel={playerNames.black}
                     bestMoveArrows={bestMoveArrows}
                     timelineLength={timeline.length}
                     currentMoveIndex={currentMoveIndex}
@@ -740,6 +745,8 @@ export default function ReviewPage() {
                   evaluationPercent={evaluationPercent}
                   evaluationSummary={evaluationSummary}
                   currentEvaluationScore={currentEvaluationScore}
+                  whiteLabel={playerNames.white}
+                  blackLabel={playerNames.black}
                   bestMoveArrows={bestMoveArrows}
                   timelineLength={timeline.length}
                   currentMoveIndex={currentMoveIndex}
@@ -852,6 +859,15 @@ function deriveUciFromSan(fen: string, san: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function getPlayerNamesFromPgn(pgn: string): { white: string; black: string } {
+  const whiteMatch = pgn.match(/\[White\s+"([^"]+)"\]/i);
+  const blackMatch = pgn.match(/\[Black\s+"([^"]+)"\]/i);
+  return {
+    white: whiteMatch?.[1]?.trim() || "White",
+    black: blackMatch?.[1]?.trim() || "Black",
+  };
 }
 
 const BOARD_THEMES: Record<

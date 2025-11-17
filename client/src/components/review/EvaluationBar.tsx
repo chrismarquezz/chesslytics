@@ -3,19 +3,22 @@ import { formatScore } from "../../utils/reviewEngine";
 
 interface EvaluationBarProps {
   evaluationPercent: number;
-  evaluationSummary: string;
   currentEvaluationScore: EngineScore | null;
+  whiteLabel?: string;
+  blackLabel?: string;
 }
 
 export default function EvaluationBar({
   evaluationPercent,
   currentEvaluationScore,
+  whiteLabel = "White",
+  blackLabel = "Black",
 }: EvaluationBarProps) {
   return (
     <div className="space-y-2">
       <div className="flex justify-between text-xs font-semibold text-gray-600">
-        <span>White</span>
-        <span>Black</span>
+        <span>{whiteLabel}</span>
+        <span>{blackLabel}</span>
       </div>
       <div className="relative h-6 border border-gray-300 rounded overflow-hidden bg-white">
         <div className="absolute inset-0 bg-gray-900" />

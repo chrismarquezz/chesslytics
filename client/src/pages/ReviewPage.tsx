@@ -92,6 +92,8 @@ export default function ReviewPage() {
     fen?: string;
   } | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisReady, setAnalysisReady] = useState(false);
   const [analysisKey, setAnalysisKey] = useState(0);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -112,6 +114,7 @@ export default function ReviewPage() {
   const [showBestMoveArrow, setShowBestMoveArrow] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const bookCacheRef = useRef<Record<string, BookPositionInfo | null>>({});
+  const evaluationRunIdRef = useRef(0);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -173,6 +176,27 @@ export default function ReviewPage() {
   }, []);
 
   useEffect(() => {
+    if (analysisLoading) {
+      setShowAnalysisModal(true);
+      setLoadingProgress(5);
+      const interval = setInterval(() => {
+        setLoadingProgress((prev) => {
+          if (prev >= 90) return prev;
+          const next = prev + Math.random() * 5;
+          return Math.min(next, 85);
+        });
+      }, 400);
+      return () => clearInterval(interval);
+    }
+    setLoadingProgress(100);
+    const timeout = setTimeout(() => {
+      setShowAnalysisModal(false);
+      setLoadingProgress(0);
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [analysisLoading]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     if (!analysisReady && !timeline.length && !pgnInput) {
       window.localStorage.removeItem(REVIEW_STORAGE_KEY);
@@ -217,8 +241,10 @@ export default function ReviewPage() {
     currentMoveIndex >= 0 && timeline[currentMoveIndex] ? timeline[currentMoveIndex].fen : initialFen;
   const boardCardWidth = Math.max(boardSize + 48, 360);
 
-  const whiteHeaderLabel = playerClock ? `${playerNames.white} (${playerClock})` : playerNames.white;
-  const blackHeaderLabel = playerClock ? `${playerNames.black} (${playerClock})` : playerNames.black;
+  const whiteDisplayName = playerNames.white && playerNames.white !== "?" ? playerNames.white : "White";
+  const blackDisplayName = playerNames.black && playerNames.black !== "?" ? playerNames.black : "Black";
+  const whiteHeaderLabel = playerClock ? `${whiteDisplayName} (${playerClock})` : whiteDisplayName;
+  const blackHeaderLabel = playerClock ? `${blackDisplayName} (${playerClock})` : blackDisplayName;
 
   const movePairs = useMemo<MovePair[]>(() => {
     const pairs: MovePair[] = [];
@@ -383,7 +409,53 @@ export default function ReviewPage() {
     }
   }, []);
 
+  const evaluateEntireTimeline = useCallback(
+    async (moves: MoveSnapshot[], runId: number) => {
+      const queue = [startingSnapshot, ...moves];
+      for (const move of queue) {
+        if (evaluationRunIdRef.current !== runId) break;
+        setMoveEvaluations((prev) => {
+          const prevState = prev[move.ply];
+          const previousEvaluation =
+            prevState?.status === "success"
+              ? prevState.evaluation
+              : prevState?.status === "loading"
+                ? prevState.previous
+                : undefined;
+          return {
+            ...prev,
+            [move.ply]: { status: "loading", previous: previousEvaluation },
+          };
+        });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/review/evaluate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fen: move.fen, depth: 16 }),
+          });
+          const payload: EngineEvaluation | { error: string } = await response.json();
+          if (!response.ok || "error" in payload) {
+            throw new Error("error" in payload ? payload.error : "Failed to evaluate position");
+          }
+          if (evaluationRunIdRef.current !== runId) break;
+          setMoveEvaluations((prev) => ({
+            ...prev,
+            [move.ply]: { status: "success", evaluation: payload },
+          }));
+        } catch (err) {
+          if (evaluationRunIdRef.current !== runId) break;
+          setMoveEvaluations((prev) => ({
+            ...prev,
+            [move.ply]: { status: "error", error: getErrorMessage(err, "Engine error") },
+          }));
+        }
+      }
+    },
+    [startingSnapshot]
+  );
+
   const resetReviewState = useCallback(() => {
+    evaluationRunIdRef.current += 1;
     setPlayerClock(null);
     setAnalysisReady(false);
     setTimeline([]);
@@ -437,7 +509,14 @@ export default function ReviewPage() {
       if (!trimmed) return;
       setInputError(null);
       setAnalysisError(null);
-
+      setAnalysisReady(false);
+      setTimeline([]);
+      setCurrentMoveIndex(-1);
+      setMoveEvaluations({});
+      setBookStatusByPly({});
+      setLastEvaluationDisplay(null);
+      setIsAutoPlaying(false);
+      bookCacheRef.current = {};
       let parsedMoves: MoveSnapshot[] = [];
       try {
         parsedMoves = buildTimelineFromPgn(trimmed);
@@ -451,6 +530,8 @@ export default function ReviewPage() {
         return;
       }
 
+      const runId = Date.now();
+      evaluationRunIdRef.current = runId;
       setPgnInput(trimmed);
       setAnalysisLoading(true);
       try {
@@ -471,19 +552,22 @@ export default function ReviewPage() {
         const timelineResult = payload.timeline ?? parsedMoves;
         bootstrapTimeline(timelineResult, true);
         setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
-        setAnalysisReady(true);
-      setAnalysisKey((prev) => prev + 1);
-      const extractedNames = getPlayerNamesFromPgn(trimmed);
-      if (extractedNames.white !== "White" || extractedNames.black !== "Black") {
-        setPlayerNames(extractedNames);
-      }
+        await evaluateEntireTimeline(timelineResult, runId);
+        if (evaluationRunIdRef.current === runId) {
+          setAnalysisReady(true);
+          setAnalysisKey((prev) => prev + 1);
+          const extractedNames = getPlayerNamesFromPgn(trimmed);
+          setPlayerNames(extractedNames);
+        }
       } catch (err) {
         setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
       } finally {
-        setAnalysisLoading(false);
+        if (evaluationRunIdRef.current === runId) {
+          setAnalysisLoading(false);
+        }
       }
     },
-    [bootstrapTimeline]
+    [bootstrapTimeline, evaluateEntireTimeline]
   );
 
   const handleAnalyze = () => {
@@ -622,23 +706,6 @@ export default function ReviewPage() {
   );
 
   useEffect(() => {
-    if (!analysisReady || isClearing) return;
-    const hasLoading = Object.values(moveEvaluations).some((state) => state?.status === "loading");
-    if (hasLoading) return;
-    if (!moveEvaluations[0] || moveEvaluations[0]?.status === "idle") {
-      requestEvaluation(startingSnapshot);
-      return;
-    }
-    const pendingMove = timeline.find((move) => {
-      const state = moveEvaluations[move.ply];
-      return !state || state.status === "idle";
-    });
-    if (pendingMove) {
-      requestEvaluation(pendingMove);
-    }
-  }, [analysisReady, isClearing, moveEvaluations, requestEvaluation, startingSnapshot, timeline]);
-
-  useEffect(() => {
     if (!analysisReady || !timeline.length) {
       setBookStatusByPly({});
       return;
@@ -714,7 +781,7 @@ export default function ReviewPage() {
       <Navbar />
       <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-24">
         <div className="max-w-6xl mx-auto space-y-10">
-          {!analysisReady && (
+          {!analysisReady && !analysisLoading && (
             <div className="w-full max-w-3xl mx-auto">
               <GameInputCard
                 pgnInput={pgnInput}
@@ -728,8 +795,22 @@ export default function ReviewPage() {
               />
             </div>
           )}
+          {showAnalysisModal && (
+            <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 transition-opacity duration-300 ${analysisLoading ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+              <div className={`bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-xl p-8 space-y-4 text-center transform transition-all duration-300 ${analysisLoading ? "scale-100" : "scale-95"}`}>
+                <h3 className="text-2xl font-semibold text-gray-900">Analyzing Game</h3>
+                <p className="text-sm text-gray-500">Preparing engine insights and move timelines…</p>
+                <div className="w-full h-3 rounded-full bg-gray-200 overflow-hidden">
+                  <div
+                    className="h-full bg-[#00bfa6] transition-all duration-300 ease-out"
+                    style={{ width: `${Math.min(loadingProgress, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
-          {analysisReady && selectedView === "analysis" && (
+          {analysisReady && !analysisLoading && !showAnalysisModal && selectedView === "analysis" && (
             <section
               key={analysisKey}
               className={`${isClearing ? "fade-out" : "fade-in"} w-full`}

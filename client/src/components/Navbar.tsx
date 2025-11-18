@@ -5,7 +5,7 @@ export default function Navbar() {
   const location = useLocation();
 
   const links = [
-    { to: "/", label: "Stats" },
+    { to: "/", label: "Profile" },
     { to: "/review", label: "Review" },
     // { to: "/compare", label: "Compare" },
   ];

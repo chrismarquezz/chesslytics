@@ -18,7 +18,7 @@ export default function Layout() {
               location.pathname === "/" ? "text-[#00bfa6]" : "text-gray-700"
             } hover:text-[#00bfa6] font-medium transition`}
           >
-            Stats
+            Profile
           </Link>
 
           <Link

@@ -9,6 +9,8 @@ interface BoardAnalysisCardProps {
   boardWidth: number;
   boardOrientation: "white" | "black";
   boardColors: { light: string; dark: string };
+  lastMove?: { from?: string; to?: string } | null;
+  lastMoveColor?: string | null;
   evaluationPercent: number;
   currentEvaluationScore: EngineScore | null;
   whiteLabel?: string;
@@ -33,6 +35,8 @@ export default function BoardAnalysisCard({
   boardWidth,
   boardOrientation,
   boardColors,
+  lastMove,
+  lastMoveColor,
   evaluationPercent,
   currentEvaluationScore,
   whiteLabel,
@@ -53,6 +57,14 @@ export default function BoardAnalysisCard({
 }: BoardAnalysisCardProps) {
   const hasMoves = timelineLength > 0;
   const cardWidth = boardWidth + 48;
+  const highlightColor = lastMoveColor || "rgba(252, 211, 77, 0.8)"; // default yellow fallback
+  const customSquareStyles =
+    lastMove?.from || lastMove?.to
+      ? {
+          ...(lastMove?.from ? { [lastMove.from]: { backgroundColor: highlightColor } } : {}),
+          ...(lastMove?.to ? { [lastMove.to]: { backgroundColor: highlightColor } } : {}),
+        }
+      : undefined;
 
   return (
     <div
@@ -77,6 +89,7 @@ export default function BoardAnalysisCard({
           customLightSquareStyle={{ backgroundColor: boardColors.light }}
           customBoardStyle={{ borderRadius: 0 }}
           customArrows={bestMoveArrows}
+          customSquareStyles={customSquareStyles}
         />
       </div>
       <div className="flex flex-wrap gap-4 items-center border-t border-gray-100 pt-4">

@@ -222,6 +222,10 @@ export default function ReviewPage() {
 
   const currentMove = currentMoveIndex >= 0 ? timeline[currentMoveIndex] : null;
   const currentEval = currentMove ? moveEvaluations[currentMove.ply] : null;
+  const lastMoveSquares = useMemo(() => {
+    if (!currentMove?.uci || currentMove.uci.length < 4) return null;
+    return { from: currentMove.uci.slice(0, 2), to: currentMove.uci.slice(2, 4) };
+  }, [currentMove]);
 
   const currentFen = currentMove?.fen ?? initialFen;
   const currentEvaluationState = currentMove
@@ -304,6 +308,33 @@ export default function ReviewPage() {
     });
     return map;
   }, [timeline, moveEvaluations, startingSnapshot, initialFen]);
+
+  const lastMoveColor = useMemo(() => {
+    if (!currentMove) return null;
+    const bookStatus = bookStatusByPly[currentMove.ply];
+    if (bookStatus?.inBook) {
+      return "rgba(59, 130, 246, 0.35)"; // blue for book moves
+    }
+    const quality = moveClassifications[currentMove.ply]?.label;
+    switch (quality) {
+      case "Best":
+        return "rgba(34, 197, 94, 0.3)"; // green-500
+      case "Good":
+        return "rgba(74, 222, 128, 0.3)"; // green-400
+      case "Inaccuracy":
+        return "rgba(250, 204, 21, 0.35)"; // yellow-400
+      case "Mistake":
+        return "rgba(251, 146, 60, 0.35)"; // orange-400
+      case "Blunder":
+        return "rgba(248, 113, 113, 0.35)"; // red-400
+      case "Forced":
+        return "rgba(148, 163, 184, 0.35)"; // slate-400
+      case "Miss":
+        return "rgba(248, 113, 113, 0.45)"; // stronger red
+      default:
+        return "rgba(252, 211, 77, 0.8)"; // default yellow
+    }
+  }, [bookStatusByPly, currentMove, moveClassifications]);
 
   const currentMoveClassification = currentMove ? moveClassifications[currentMove.ply] : undefined;
 
@@ -821,6 +852,8 @@ export default function ReviewPage() {
                     boardWidth={boardSize}
                     boardOrientation={boardOrientation}
                     boardColors={BOARD_THEMES[boardTheme]}
+                    lastMove={lastMoveSquares}
+                    lastMoveColor={lastMoveColor}
                     evaluationPercent={evaluationPercent}
                     currentEvaluationScore={currentEvaluationScore}
                     whiteLabel={whiteHeaderLabel}
@@ -862,6 +895,8 @@ export default function ReviewPage() {
                   boardWidth={boardSize}
                   boardOrientation={boardOrientation}
                   boardColors={BOARD_THEMES[boardTheme]}
+                  lastMove={lastMoveSquares}
+                  lastMoveColor={lastMoveColor}
                   evaluationPercent={evaluationPercent}
                   currentEvaluationScore={currentEvaluationScore}
                   whiteLabel={whiteHeaderLabel}

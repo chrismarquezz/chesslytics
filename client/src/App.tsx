@@ -92,7 +92,16 @@ export default function App() {
     if (!game?.pgn) return;
     const whiteName = game.white?.username ?? "White";
     const blackName = game.black?.username ?? "Black";
-    navigate("/review", { state: { pgn: game.pgn, players: { white: whiteName, black: blackName } } });
+    const openingTag = getOpeningFromPgn(game.pgn);
+    const openingLabel = formatOpeningLabel(openingTag || game.opening || game.eco);
+    navigate("/review", {
+      state: {
+        pgn: game.pgn,
+        players: { white: whiteName, black: blackName },
+        opening: openingLabel || null,
+        endTime: game.end_time ?? null,
+      },
+    });
   };
 
   const handleRefresh = () => {

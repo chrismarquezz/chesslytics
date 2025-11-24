@@ -87,6 +87,8 @@ export default function ReviewPage() {
   const [pgnInput, setPgnInput] = useState("");
   const [selectedView] = useState<View>("analysis");
   const [timeline, setTimeline] = useState<MoveSnapshot[]>([]);
+  const [fallbackOpening, setFallbackOpening] = useState<string | null>(null);
+  const [headerEndTime, setHeaderEndTime] = useState<number | null>(null);
   const [playerNames, setPlayerNames] = useState(() => {
     if (typeof window !== "undefined") {
       const cached = window.localStorage.getItem(PLAYER_NAMES_STORAGE_KEY);
@@ -336,6 +338,46 @@ export default function ReviewPage() {
     }
   }, [bookStatusByPly, currentMove, moveClassifications]);
 
+  const gameHeaderCard = useMemo(() => {
+    const tags = extractTagsFromPgn(pgnInput);
+    const resultLabel = formatResultLabel(gameResult?.result);
+    const openingLabel = tags.opening ?? tags.variation ?? fallbackOpening ?? "Opening unavailable";
+    const whiteRating = tags.whiteElo;
+    const blackRating = tags.blackElo;
+    const timeControlLabel = formatTimeControlLabel(tags.timeControl) ?? "—";
+    const dateLabel = formatUtcDateLabel({
+      utcDate: tags.utcDate,
+      utcTime: tags.utcTime,
+      fallbackEpochSeconds: headerEndTime,
+    });
+
+    const whiteLabel = `${whiteDisplayName}${whiteRating ? ` (${whiteRating})` : ""}`;
+    const blackLabel = `${blackDisplayName}${blackRating ? ` (${blackRating})` : ""}`;
+
+    return (
+      <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-4 space-y-3">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-gray-900">{resultLabel}</p>
+          <p className="text-xs text-gray-500">{openingLabel}</p>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full border border-gray-300 bg-white" />
+            <span className="text-sm font-semibold text-gray-900">{whiteLabel}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-gray-900" />
+            <span className="text-sm font-semibold text-gray-900">{blackLabel}</span>
+          </div>
+        </div>
+        <div className="text-xs text-gray-600">
+          <span>{timeControlLabel}</span>
+          {dateLabel ? <span className="ml-2 text-gray-500">· {dateLabel}</span> : null}
+        </div>
+      </div>
+    );
+  }, [blackDisplayName, fallbackOpening, gameResult?.result, headerEndTime, pgnInput, whiteDisplayName]);
+
   const currentMoveClassification = currentMove ? moveClassifications[currentMove.ply] : undefined;
 
   useEffect(() => {
@@ -467,6 +509,8 @@ export default function ReviewPage() {
     setAnalysisError(null);
     setInputError(null);
     setGameResult(null);
+    setFallbackOpening(null);
+    setHeaderEndTime(null);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(REVIEW_STORAGE_KEY);
       window.localStorage.removeItem(PLAYER_NAMES_STORAGE_KEY);
@@ -498,7 +542,7 @@ export default function ReviewPage() {
   }, [resetReviewState]);
 
   const runAnalysis = useCallback(
-    async (rawPgn: string) => {
+    async (rawPgn: string, openingHint?: string | null) => {
       const trimmed = rawPgn.trim();
       if (!trimmed) return;
       setInputError(null);
@@ -511,6 +555,21 @@ export default function ReviewPage() {
       setLastEvaluationDisplay(null);
       setIsAutoPlaying(false);
       bookCacheRef.current = {};
+      const tags = extractTagsFromPgn(trimmed);
+      const openingFromTags = tags.opening ?? tags.variation ?? null;
+      const openingResolved = openingFromTags ?? openingHint ?? fallbackOpening;
+      if (tags.utcDate || tags.utcTime) {
+        const fromTags = formatUtcDateLabel({ utcDate: tags.utcDate, utcTime: tags.utcTime, fallbackEpochSeconds: null });
+        if (!headerEndTime && fromTags) {
+          const normalizedDate = tags.utcDate?.replace(/\./g, "-") ?? null;
+          const iso = normalizedDate ? `${normalizedDate}T${tags.utcTime ?? "00:00:00"}Z` : null;
+          const parsed = iso ? Date.parse(iso) : NaN;
+          if (!Number.isNaN(parsed)) {
+            setHeaderEndTime(Math.floor(parsed / 1000));
+          }
+        }
+      }
+      setFallbackOpening(normalizeOpeningLabel(openingResolved));
       let parsedMoves: MoveSnapshot[] = [];
       try {
         parsedMoves = buildTimelineFromPgn(trimmed);
@@ -568,7 +627,7 @@ export default function ReviewPage() {
         setAnalysisLoading(false);
       }
     },
-    [bootstrapTimeline]
+    [bootstrapTimeline, fallbackOpening, headerEndTime]
   );
 
   const handleAnalyze = () => {
@@ -576,18 +635,30 @@ export default function ReviewPage() {
   };
 
   useEffect(() => {
-    const state = location.state as { pgn?: string; players?: { white: string; black: string }; clock?: string | null } | null;
+    const state = location.state as {
+      pgn?: string;
+      players?: { white: string; black: string };
+      clock?: string | null;
+      opening?: string | null;
+      endTime?: number | null;
+    } | null;
     if (state?.players) {
       setPlayerNames({
         white: state.players.white || "White",
         black: state.players.black || "Black",
       });
     }
+    if (state?.opening) {
+      setFallbackOpening(state.opening);
+    }
+    if (typeof state?.endTime === "number") {
+      setHeaderEndTime(state.endTime);
+    }
     if (typeof state?.clock !== "undefined") {
       setPlayerClock(state.clock || null);
     }
     if (state?.pgn) {
-      void runAnalysis(state.pgn);
+      void runAnalysis(state.pgn, state.opening ?? null);
       navigate(".", { replace: true, state: null });
     }
   }, [location.state, navigate, runAnalysis]);
@@ -838,6 +909,7 @@ export default function ReviewPage() {
                 style={{ gridTemplateColumns: `360px ${boardCardWidth}px 360px`, gap: "2rem", justifyContent: "center" }}
               >
                 <div className="flex flex-col gap-6">
+                  {gameHeaderCard}
                   <MoveListCard
                     movePairs={movePairs}
                     currentMoveIndex={currentMoveIndex}
@@ -918,6 +990,7 @@ export default function ReviewPage() {
               </div>
 
               <div className="xl:hidden space-y-6 mt-8">
+                {gameHeaderCard}
                 <MoveListCard
                   movePairs={movePairs}
                   currentMoveIndex={currentMoveIndex}
@@ -1021,6 +1094,55 @@ function getPlayerNamesFromPgn(pgn: string): { white: string; black: string } {
   };
 }
 
+function extractTagsFromPgn(pgn: string): {
+  whiteElo: string | null;
+  blackElo: string | null;
+  timeControl: string | null;
+  date: string | null;
+  utcDate: string | null;
+  utcTime: string | null;
+  opening: string | null;
+  variation: string | null;
+} {
+  const getTag = (name: string) => {
+    const match = pgn.match(new RegExp(`\\[${name}\\s+"([^"]+)"\\]`, "i"));
+    return match?.[1]?.trim() ?? null;
+  };
+  return {
+    whiteElo: getTag("WhiteElo"),
+    blackElo: getTag("BlackElo"),
+    timeControl: getTag("TimeControl"),
+    date: getTag("Date") ?? getTag("UTCDate"),
+    utcDate: getTag("UTCDate"),
+    utcTime: getTag("UTCTime"),
+    opening: getTag("Opening"),
+    variation: getTag("Variation"),
+  };
+}
+
+function normalizeOpeningLabel(raw?: string | null) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    if (trimmed.startsWith("http")) {
+      const url = new URL(trimmed);
+      const parts = url.pathname.split("/").filter(Boolean);
+      const slug = parts[parts.length - 1] || parts[parts.length - 2] || trimmed;
+      const decoded = decodeURIComponent(slug);
+      const tokens = decoded.replace(/[-_]/g, " ").split(/\s+/);
+      const filtered = tokens.filter((token) => token && !/\d/.test(token));
+      const label = filtered.join(" ").trim();
+      return label || trimmed;
+    }
+  } catch {
+    // ignore URL parse errors and fall back to trimmed
+  }
+
+  return trimmed;
+}
+
 function getGameResultFromPgn(pgn: string): GameResultInfo | null {
   if (!pgn) return null;
   const resultMatch = pgn.match(/\[Result\s+"([^"]+)"\]/i);
@@ -1032,6 +1154,62 @@ function getGameResultFromPgn(pgn: string): GameResultInfo | null {
     result,
     termination: terminationMatch?.[1],
   };
+}
+
+function formatResultLabel(result?: string | null) {
+  if (!result) return "In progress";
+  if (result === "1-0") return "White wins";
+  if (result === "0-1") return "Black wins";
+  if (result === "1/2-1/2") return "Draw";
+  return "In progress";
+}
+
+function formatTimeControlLabel(raw: string | null) {
+  if (!raw) return null;
+  if (raw.includes("/")) return raw; // uncommon formats, show raw
+  const [basePart, incPart = "0"] = raw.split("+");
+  const baseSeconds = Number(basePart);
+  const incSeconds = Number(incPart);
+  if (!Number.isFinite(baseSeconds)) return raw;
+  const minutes = baseSeconds / 60;
+  const baseLabel =
+    baseSeconds % 60 === 0
+      ? `${minutes}`
+      : minutes >= 1
+        ? `${parseFloat(minutes.toFixed(1)).toString()}`
+        : `${parseFloat((minutes).toFixed(2))}`;
+  const incLabel = Number.isFinite(incSeconds) ? `${incSeconds}` : incPart;
+  return `${baseLabel}+${incLabel}`;
+}
+
+function formatUtcDateLabel({
+  utcDate,
+  utcTime,
+  fallbackEpochSeconds,
+}: {
+  utcDate: string | null;
+  utcTime: string | null;
+  fallbackEpochSeconds: number | null;
+}) {
+  const buildFromUtcTags = () => {
+    if (!utcDate) return null;
+    const normalizedDate = utcDate.replace(/\./g, "-");
+    const time = utcTime ?? "00:00:00";
+    const iso = `${normalizedDate}T${time}Z`;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  };
+
+  const fromTags = buildFromUtcTags();
+  const date = fromTags ?? (fallbackEpochSeconds ? new Date(fallbackEpochSeconds * 1000) : null);
+  if (!date) return null;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 const BOARD_THEMES: Record<

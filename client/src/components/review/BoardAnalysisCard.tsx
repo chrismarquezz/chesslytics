@@ -57,12 +57,16 @@ export default function BoardAnalysisCard({
 }: BoardAnalysisCardProps) {
   const hasMoves = timelineLength > 0;
   const cardWidth = boardWidth + 48;
-  const highlightColor = lastMoveColor || "rgba(252, 211, 77, 0.8)"; // default yellow fallback
+  const highlightColor = lastMoveColor || "#fcd34d"; // default yellow fallback
   const customSquareStyles =
     lastMove?.from || lastMove?.to
       ? {
-          ...(lastMove?.from ? { [lastMove.from]: { backgroundColor: highlightColor } } : {}),
-          ...(lastMove?.to ? { [lastMove.to]: { backgroundColor: highlightColor } } : {}),
+          ...(lastMove?.from
+            ? { [lastMove.from]: { backgroundColor: highlightColor, boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.05)" } }
+            : {}),
+          ...(lastMove?.to
+            ? { [lastMove.to]: { backgroundColor: highlightColor, boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.05)" } }
+            : {}),
         }
       : undefined;
 

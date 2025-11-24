@@ -313,26 +313,26 @@ export default function ReviewPage() {
     if (!currentMove) return null;
     const bookStatus = bookStatusByPly[currentMove.ply];
     if (bookStatus?.inBook) {
-      return "rgba(59, 130, 246, 0.35)"; // blue for book moves
+      return "#7b4a24"; // brown aligned with book badge
     }
     const quality = moveClassifications[currentMove.ply]?.label;
     switch (quality) {
       case "Best":
-        return "rgba(34, 197, 94, 0.3)"; // green-500
+        return "#34d399"; // emerald from card
       case "Good":
-        return "rgba(74, 222, 128, 0.3)"; // green-400
+        return "#38bdf8"; // sky from card
       case "Inaccuracy":
-        return "rgba(250, 204, 21, 0.35)"; // yellow-400
+        return "#fbbf24"; // amber from card
       case "Mistake":
-        return "rgba(251, 146, 60, 0.35)"; // orange-400
+        return "#fb923c"; // orange from card
       case "Blunder":
-        return "rgba(248, 113, 113, 0.35)"; // red-400
+        return "#fca5a5"; // red from card
       case "Forced":
-        return "rgba(148, 163, 184, 0.35)"; // slate-400
+        return "#e5e7eb"; // gray from card badge
       case "Miss":
-        return "rgba(248, 113, 113, 0.45)"; // stronger red
+        return "#fb7185"; // rose from card
       default:
-        return "rgba(252, 211, 77, 0.8)"; // default yellow
+        return "#fcd34d"; // default yellow
     }
   }, [bookStatusByPly, currentMove, moveClassifications]);
 

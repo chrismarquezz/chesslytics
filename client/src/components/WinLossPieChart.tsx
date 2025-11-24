@@ -32,7 +32,7 @@ export default function WinLossPieChart({ stats, selectedMode }: WinLossPieChart
     totalGames ? ((val / totalGames) * 100).toFixed(1) + "%" : "0%";
 
   return (
-    <section className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 border border-gray-200">
+    <section className="bg-white shadow-lg transition-all duration-300 rounded-2xl p-6 border border-gray-200">
       <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
         Win / Loss Distribution
       </h3>

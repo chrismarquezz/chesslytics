@@ -11,7 +11,7 @@ interface SummaryGridProps {
 
 export default function SummaryGrid({ cards }: SummaryGridProps) {
   return (
-    <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6">
+    <div className="bg-white shadow-lg transition-all duration-300 rounded-2xl border border-gray-200 p-6">
       <h2 className="text-2xl font-semibold text-gray-800 mb-4">Review Summary</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {cards.map((card) => (

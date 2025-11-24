@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { EngineEvaluation, MoveEvalState } from "../../types/review";
 import { formatBestMoveSan, formatLineContinuation, formatScore, getMateWinner } from "../../utils/reviewEngine";
 
@@ -15,22 +16,82 @@ export default function EngineAnalysisCard({
   drawInfo,
 }: EngineAnalysisCardProps) {
   const showDraw = Boolean(drawInfo && drawInfo.result === "1/2-1/2");
+  const [activeTab, setActiveTab] = useState<"summary" | "analysis" | "time" | "explorer">("analysis");
+  const tabs: Array<{ key: typeof activeTab; label: string }> = [
+    { key: "summary", label: "Summary" },
+    { key: "analysis", label: "Analysis" },
+    { key: "time", label: "Time" },
+    { key: "explorer", label: "Explorer" },
+  ];
+
+  const summaryContent = useMemo(() => {
+    if (showDraw) return <DrawSummary reason={drawInfo?.reason} />;
+    if (engineStatus === "error" && !stableEvaluation) {
+      return <p className="text-sm text-red-500">Engine error: {engineError || "Unable to evaluate position."}</p>;
+    }
+    if (!stableEvaluation) {
+      return <p className="text-sm text-gray-500">Analyzing current position…</p>;
+    }
+    const scoreLabel = formatScore(stableEvaluation.evaluation.score);
+    const bestMove = formatBestMoveSan(stableEvaluation.evaluation.bestMove, stableEvaluation.fen);
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-gray-600">Score (CP/Mate)</p>
+        <p className="text-2xl font-semibold text-gray-900">{scoreLabel}</p>
+        <p className="text-sm text-gray-600">Best move</p>
+        <p className="text-lg font-semibold text-gray-900">{bestMove}</p>
+      </div>
+    );
+  }, [drawInfo?.reason, engineError, engineStatus, showDraw, stableEvaluation]);
+
+  const timeContent = (
+    <div className="text-sm text-gray-500">
+      Clock timeline not available in this view yet.
+    </div>
+  );
+
+  const explorerContent = (
+    <div className="text-sm text-gray-500">
+      Position explorer coming soon. Use the board controls to navigate moves for now.
+    </div>
+  );
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow hover:shadow-2xl transition-all duration-300 p-5 flex flex-col h-[360px]">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-800">Engine</h2>
+    <div className="flex flex-col gap-0">
+      <div className="flex w-full border border-gray-200 bg-white rounded-t-2xl overflow-hidden">
+        {tabs.map((tab) => {
+          const active = tab.key === activeTab;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 text-sm font-semibold py-3 text-center transition ${
+                active
+                  ? "bg-[#00bfa6]/10 text-gray-900 border-b-2 border-[#00bfa6]"
+                  : "text-gray-500"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
-      <div className="flex-1 overflow-y-auto">
-        {showDraw ? (
-          <DrawSummary reason={drawInfo?.reason} />
-        ) : engineStatus === "error" && !stableEvaluation ? (
-          <p className="text-sm text-red-500">Engine error: {engineError || "Unable to evaluate position."}</p>
-        ) : !stableEvaluation ? (
-          <p className="text-sm text-gray-500">Analyzing current position…</p>
-        ) : (
-          <EngineLines evaluation={stableEvaluation.evaluation} fen={stableEvaluation.fen} />
-        )}
+      <div className="bg-white rounded-b-2xl border border-gray-200 border-t-0 shadow transition-all duration-300 flex flex-col h-[380px] px-5 pb-5 pt-4">
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "summary" && summaryContent}
+          {activeTab === "analysis" &&
+            (showDraw ? (
+              <DrawSummary reason={drawInfo?.reason} />
+            ) : engineStatus === "error" && !stableEvaluation ? (
+              <p className="text-sm text-red-500">Engine error: {engineError || "Unable to evaluate position."}</p>
+            ) : !stableEvaluation ? (
+              <p className="text-sm text-gray-500">Analyzing current position…</p>
+            ) : (
+              <EngineLines evaluation={stableEvaluation.evaluation} fen={stableEvaluation.fen} />
+            ))}
+          {activeTab === "time" && timeContent}
+          {activeTab === "explorer" && explorerContent}
+        </div>
       </div>
     </div>
   );

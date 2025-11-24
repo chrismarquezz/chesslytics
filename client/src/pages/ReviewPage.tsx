@@ -89,6 +89,7 @@ export default function ReviewPage() {
   const [timeline, setTimeline] = useState<MoveSnapshot[]>([]);
   const [fallbackOpening, setFallbackOpening] = useState<string | null>(null);
   const [headerEndTime, setHeaderEndTime] = useState<number | null>(null);
+  const [fullReviewDone, setFullReviewDone] = useState(false);
   const [playerNames, setPlayerNames] = useState(() => {
     if (typeof window !== "undefined") {
       const cached = window.localStorage.getItem(PLAYER_NAMES_STORAGE_KEY);
@@ -288,6 +289,7 @@ export default function ReviewPage() {
     currentClockSnapshot.black ?? playerClock ?? earliestClockByColor.black ?? earliestClockByColor.white ?? null;
 
   const moveClassifications = useMemo<Record<number, MoveQuality | undefined>>(() => {
+    if (!fullReviewDone) return {};
     const map: Record<number, MoveQuality | undefined> = {};
     timeline.forEach((move, index) => {
       const prevSnapshot = index === 0 ? startingSnapshot : timeline[index - 1];
@@ -309,10 +311,10 @@ export default function ReviewPage() {
       }
     });
     return map;
-  }, [timeline, moveEvaluations, startingSnapshot, initialFen]);
+  }, [fullReviewDone, timeline, moveEvaluations, startingSnapshot, initialFen]);
 
   const lastMoveColor = useMemo(() => {
-    if (!currentMove) return null;
+    if (!currentMove || !fullReviewDone) return null;
     const bookStatus = bookStatusByPly[currentMove.ply];
     if (bookStatus?.inBook) {
       return "#7b4a24"; // brown aligned with book badge
@@ -511,6 +513,7 @@ export default function ReviewPage() {
     setGameResult(null);
     setFallbackOpening(null);
     setHeaderEndTime(null);
+    setFullReviewDone(false);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(REVIEW_STORAGE_KEY);
       window.localStorage.removeItem(PLAYER_NAMES_STORAGE_KEY);
@@ -554,22 +557,21 @@ export default function ReviewPage() {
       setBookStatusByPly({});
       setLastEvaluationDisplay(null);
       setIsAutoPlaying(false);
+      setFullReviewDone(false);
       bookCacheRef.current = {};
       const tags = extractTagsFromPgn(trimmed);
       const openingFromTags = tags.opening ?? tags.variation ?? null;
       const openingResolved = openingFromTags ?? openingHint ?? fallbackOpening;
+      const normalizedOpening = normalizeOpeningLabel(openingResolved);
+      setFallbackOpening(normalizedOpening);
       if (tags.utcDate || tags.utcTime) {
-        const fromTags = formatUtcDateLabel({ utcDate: tags.utcDate, utcTime: tags.utcTime, fallbackEpochSeconds: null });
-        if (!headerEndTime && fromTags) {
-          const normalizedDate = tags.utcDate?.replace(/\./g, "-") ?? null;
-          const iso = normalizedDate ? `${normalizedDate}T${tags.utcTime ?? "00:00:00"}Z` : null;
-          const parsed = iso ? Date.parse(iso) : NaN;
-          if (!Number.isNaN(parsed)) {
-            setHeaderEndTime(Math.floor(parsed / 1000));
-          }
+        const normalizedDate = tags.utcDate?.replace(/\./g, "-") ?? null;
+        const iso = normalizedDate ? `${normalizedDate}T${tags.utcTime ?? "00:00:00"}Z` : null;
+        const parsed = iso ? Date.parse(iso) : NaN;
+        if (!Number.isNaN(parsed)) {
+          setHeaderEndTime(Math.floor(parsed / 1000));
         }
       }
-      setFallbackOpening(normalizeOpeningLabel(openingResolved));
       let parsedMoves: MoveSnapshot[] = [];
       try {
         parsedMoves = buildTimelineFromPgn(trimmed);
@@ -593,13 +595,29 @@ export default function ReviewPage() {
         }
       }
       setPgnInput(trimmed);
+
+      const timelineResult = parsedMoves.map((move) => ({ ...move }));
+      bootstrapTimeline(timelineResult);
+      setAnalysisReady(true);
+      setAnalysisKey((prev) => prev + 1);
+      const extractedNames = getPlayerNamesFromPgn(trimmed);
+      setPlayerNames(extractedNames);
+    },
+    [bootstrapTimeline, fallbackOpening]
+  );
+
+  const runFullReview = useCallback(
+    async () => {
+      if (!pgnInput.trim() || !timeline.length) return;
       setAnalysisLoading(true);
+      setAnalysisError(null);
       try {
+        const parsedMoves = buildTimelineFromPgn(pgnInput);
         const response = await fetch(`${API_BASE_URL}/api/review/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            pgn: trimmed,
+            pgn: pgnInput.trim(),
             depth: 16,
             samples: Math.min(parsedMoves.length, 10),
           }),
@@ -617,17 +635,15 @@ export default function ReviewPage() {
         });
         bootstrapTimeline(timelineResult);
         setMoveEvaluations((prev) => mergeSampleEvaluations(prev, payload.samples));
-        setAnalysisReady(true);
+        setFullReviewDone(true);
         setAnalysisKey((prev) => prev + 1);
-        const extractedNames = getPlayerNamesFromPgn(trimmed);
-        setPlayerNames(extractedNames);
       } catch (err) {
         setAnalysisError(getErrorMessage(err, "Failed to run analysis"));
       } finally {
         setAnalysisLoading(false);
       }
     },
-    [bootstrapTimeline, fallbackOpening, headerEndTime]
+    [API_BASE_URL, bootstrapTimeline, pgnInput, timeline.length]
   );
 
   const handleAnalyze = () => {
@@ -946,12 +962,28 @@ export default function ReviewPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-6">
-                  <MoveQualityCard
-                    move={currentMove}
-                    classification={currentMoveClassification}
-                    awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
-                    bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
-                  />
+                  {fullReviewDone ? (
+                    <MoveQualityCard
+                      move={currentMove}
+                      classification={currentMoveClassification}
+                      awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
+                      bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
+                    />
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow p-5 space-y-3">
+                      <p className="text-lg font-semibold text-gray-900">Review this game</p>
+                      <p className="text-sm text-gray-600">
+                        See classifications after a full review. Top engine lines are available now.
+                      </p>
+                      <button
+                        onClick={() => void runFullReview()}
+                        className="inline-flex items-center justify-center rounded-xl bg-[#00bfa6] text-white px-4 py-2 font-semibold shadow hover:bg-[#00a48f] transition disabled:opacity-60"
+                        disabled={analysisLoading}
+                      >
+                        {analysisLoading ? "Reviewing…" : "Review Game"}
+                      </button>
+                    </div>
+                  )}
                   <EngineAnalysisCard
                     engineStatus={engineStatus}
                     engineError={engineError}
@@ -998,12 +1030,28 @@ export default function ReviewPage() {
                   moveClassifications={moveClassifications}
                   bookStatuses={bookStatusByPly}
                 />
-                <MoveQualityCard
-                  move={currentMove}
-                  classification={currentMoveClassification}
-                  awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
-                  bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
-                />
+                {fullReviewDone ? (
+                  <MoveQualityCard
+                    move={currentMove}
+                    classification={currentMoveClassification}
+                    awaitingEvaluation={Boolean(currentMove && !currentMoveClassification && !bookStatusByPly[currentMove.ply])}
+                    bookStatus={currentMove ? bookStatusByPly[currentMove.ply] : undefined}
+                  />
+                ) : (
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow p-5 space-y-3">
+                    <p className="text-lg font-semibold text-gray-900">Review this game</p>
+                    <p className="text-sm text-gray-600">
+                      See classifications after a full review. Top engine lines are available now.
+                    </p>
+                    <button
+                      onClick={() => void runFullReview()}
+                      className="inline-flex items-center justify-center rounded-xl bg-[#00bfa6] text-white px-4 py-2 font-semibold shadow hover:bg-[#00a48f] transition disabled:opacity-60"
+                      disabled={analysisLoading}
+                    >
+                      {analysisLoading ? "Reviewing…" : "Review Game"}
+                    </button>
+                  </div>
+                )}
               <EngineAnalysisCard
                 engineStatus={engineStatus}
                 engineError={engineError}

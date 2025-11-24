@@ -79,7 +79,7 @@ export default function HighlightsSection({ username, selectedMode }: Highlights
   return (
     <section className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8">
       {/* Strongest Opponent Card */}
-      <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 border border-gray-200 text-center">
+      <div className="bg-white shadow-lg transition-all duration-300 rounded-2xl p-6 border border-gray-200 text-center">
         <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
           Strongest Opponent Beaten
         </h3>
@@ -100,7 +100,7 @@ export default function HighlightsSection({ username, selectedMode }: Highlights
       </div>
 
       {/* Longest Streak Card */}
-      <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 border border-gray-200 text-center">
+      <div className="bg-white shadow-lg transition-all duration-300 rounded-2xl p-6 border border-gray-200 text-center">
         <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
           Longest Streaks
         </h3>

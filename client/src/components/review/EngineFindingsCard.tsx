@@ -22,7 +22,7 @@ interface EngineFindingsCardProps {
 
 export default function EngineFindingsCard({ qualityCards, rows }: EngineFindingsCardProps) {
   return (
-    <section className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6">
+    <section className="bg-white shadow-lg transition-all duration-300 rounded-2xl border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-semibold text-gray-800">Engine Findings</h2>
         <span className="text-xs uppercase tracking-wide text-gray-500">Live evaluations ({rows.length})</span>

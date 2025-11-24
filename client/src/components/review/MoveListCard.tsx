@@ -45,7 +45,7 @@ export default function MoveListCard({
   };
 
   return (
-    <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="bg-white shadow-lg transition-all duration-300 rounded-2xl border border-gray-200 overflow-hidden">
       <div className="max-h-110 overflow-y-auto bg-gray-50" data-move-list>
         {movePairs.length ? (
           <table className="w-full text-sm text-gray-700">

@@ -14,7 +14,7 @@ export default function RecentGamesTable({ games, allGames, username }: RecentGa
   const ratingDeltas = useMemo(() => computeRatingDeltas(allGames, username), [allGames, username]);
 
   return (
-    <section className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 border border-gray-200 w-full overflow-x-auto">
+    <section className="bg-white shadow-lg transition-all duration-300 rounded-2xl p-6 border border-gray-200 w-full overflow-x-auto">
       <h3 className="text-lg font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
         Recent Games
       </h3>

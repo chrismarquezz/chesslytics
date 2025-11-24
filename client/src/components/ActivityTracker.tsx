@@ -15,7 +15,7 @@ export default function ActivityTracker({ games, gamesLoading }: ActivityTracker
   const ratedText = lastGame?.rated ? "Rated" : "Casual";
 
   return (
-    <section className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 border border-gray-200 flex flex-col">
+    <section className="bg-white shadow-lg transition-all duration-300 rounded-2xl p-6 border border-gray-200 flex flex-col">
       <h3 className="text-2xl font-semibold text-gray-800 pb-2 border-b border-gray-200 mb-4">
         Activity Tracker
       </h3>

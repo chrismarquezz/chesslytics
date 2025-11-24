@@ -20,7 +20,7 @@ export default function GameInputCard({
   analysisError,
 }: GameInputCardProps) {
   return (
-    <div className="bg-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
+    <div className="bg-white shadow-lg transition-all duration-300 rounded-2xl border border-gray-200 p-6 flex flex-col gap-4">
       <div>
         <h2 className="text-2xl font-semibold text-gray-800">Game Input</h2>
         <p className="text-sm text-gray-500 mt-1">

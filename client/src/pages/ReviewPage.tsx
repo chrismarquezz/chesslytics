@@ -41,17 +41,6 @@ interface GameResultInfo {
   result: string;
   termination?: string;
 }
-
-interface PersistedReviewState {
-  pgnInput: string;
-  timeline: MoveSnapshot[];
-  moveEvaluations: Record<number, MoveEvalState>;
-  currentMoveIndex: number;
-  analysisReady: boolean;
-  lastEvaluationDisplay: { evaluation: EngineEvaluation; fen?: string } | null;
-  boardOrientation: "white" | "black";
-  showBestMoveArrow: boolean;
-}
 const SAMPLE_PGN = `[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2024.01.15"]
@@ -160,31 +149,6 @@ export default function ReviewPage() {
   }, [timeline.length]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const stored = JSON.parse(raw) as PersistedReviewState;
-      setPgnInput(stored.pgnInput ?? "");
-      setTimeline(stored.timeline ?? []);
-      setMoveEvaluations(stored.moveEvaluations ?? {});
-      setCurrentMoveIndex(stored.currentMoveIndex ?? -1);
-      setAnalysisReady(Boolean(stored.analysisReady && stored.timeline?.length));
-      setLastEvaluationDisplay(stored.lastEvaluationDisplay ?? null);
-      setBoardOrientation(stored.boardOrientation ?? "white");
-      setShowBestMoveArrow(stored.showBestMoveArrow ?? true);
-      if (stored.pgnInput) {
-        setGameResult(getGameResultFromPgn(stored.pgnInput));
-      }
-      if (stored.analysisReady && stored.timeline?.length) {
-        setAnalysisKey((prev) => prev + 1);
-      }
-    } catch {
-      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
-    }
-  }, []);
-
-  useEffect(() => {
     if (analysisLoading) {
       setShowAnalysisModal(true);
       setLoadingProgress(5);
@@ -204,46 +168,6 @@ export default function ReviewPage() {
     }, 350);
     return () => clearTimeout(timeout);
   }, [analysisLoading]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!analysisReady && !timeline.length && !pgnInput) {
-      window.localStorage.removeItem(REVIEW_STORAGE_KEY);
-      return;
-    }
-    const payload: PersistedReviewState = {
-      pgnInput,
-      timeline,
-      moveEvaluations,
-      currentMoveIndex,
-      analysisReady,
-      lastEvaluationDisplay,
-      boardOrientation,
-      showBestMoveArrow,
-    };
-    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(payload));
-    if (playerNames.white !== "White" || playerNames.black !== "Black") {
-      window.localStorage.setItem(PLAYER_NAMES_STORAGE_KEY, JSON.stringify(playerNames));
-    } else {
-      window.localStorage.removeItem(PLAYER_NAMES_STORAGE_KEY);
-    }
-    if (playerClock) {
-      window.localStorage.setItem(PLAYER_CLOCK_STORAGE_KEY, playerClock);
-    } else {
-      window.localStorage.removeItem(PLAYER_CLOCK_STORAGE_KEY);
-    }
-  }, [
-    analysisReady,
-    timeline,
-    moveEvaluations,
-    currentMoveIndex,
-    lastEvaluationDisplay,
-    boardOrientation,
-    showBestMoveArrow,
-    pgnInput,
-    playerNames,
-    playerClock,
-  ]);
 
 
   const boardPosition =
@@ -466,6 +390,8 @@ export default function ReviewPage() {
     setGameResult(null);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(REVIEW_STORAGE_KEY);
+      window.localStorage.removeItem(PLAYER_NAMES_STORAGE_KEY);
+      window.localStorage.removeItem(PLAYER_CLOCK_STORAGE_KEY);
     }
   }, []);
 
@@ -497,6 +423,12 @@ export default function ReviewPage() {
     setLastEvaluationDisplay(null);
     setIsAutoPlaying(false);
   }, [startingSnapshot]);
+
+  useEffect(() => {
+    return () => {
+      resetReviewState();
+    };
+  }, [resetReviewState]);
 
   const runAnalysis = useCallback(
     async (rawPgn: string) => {

@@ -21,7 +21,7 @@ interface UserContextType {
   trendHistory: TrendHistory;
   userDataLoading: boolean;
   userDataError: string | null;
-  fetchUserData: (usernameOverride?: string) => Promise<void>;
+  fetchUserData: (usernameOverride?: string) => Promise<boolean>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -73,7 +73,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setGames([]);
         setGamesError(null);
         setUserDataError(null);
-        return;
+        return false;
       }
 
       setUserDataLoading(true);
@@ -98,11 +98,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
           bullet: bulletHistory,
         });
         setGames(gamesData);
+        return true;
       } catch (err) {
         console.error("Failed to fetch player data:", err);
-        setUserDataError("Could not fetch data. Please try again.");
+        setUserDataError("Account not found. Please check the username.");
         setGames([]);
         setGamesError("Could not load recent games.");
+        return false;
       } finally {
         setUserDataLoading(false);
         setGamesLoading(false);

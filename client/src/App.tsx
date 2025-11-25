@@ -207,10 +207,20 @@ export default function App() {
               />
               <button
                 onClick={handleRefresh}
-                className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 w-10 h-10 text-gray-700 transition disabled:opacity-50"
                 disabled={gamesLoading || userDataLoading}
-              >
-                {gamesLoading ? "Refreshing…" : "Refresh"}
+                >
+                <span className="sr-only">Refresh</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`h-5 w-5 ${gamesLoading ? "animate-spin" : ""}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-5m0 0-2.704 2.704A8.25 8.25 0 1 0 20.25 12" />
+                </svg>
               </button>
             </div>
           </div>

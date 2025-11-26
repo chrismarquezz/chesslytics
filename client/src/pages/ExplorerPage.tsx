@@ -364,7 +364,7 @@ export default function ExplorerPage() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-24">
+      <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-6 pl-24 md:pl-28">
         <div className="max-w-6xl mx-auto space-y-8">
           <section className="w-full">
             <div

@@ -8,6 +8,7 @@ import BoardAnalysisCard from "../components/review/BoardAnalysisCard";
 import MoveQualityCard from "../components/review/MoveQualityCard";
 import MoveListCard, { type MovePair } from "../components/review/MoveListCard";
 import EngineAnalysisCard from "../components/review/EngineAnalysisCard";
+import { Clock3 } from "lucide-react";
 import type {
   BoardThemeKey,
   BookMoveStatus,
@@ -412,7 +413,8 @@ export default function ReviewPage() {
             <span className="text-sm font-semibold text-gray-900">{blackLabel}</span>
           </div>
         </div>
-        <div className="text-xs text-gray-600">
+        <div className="text-xs text-gray-600 flex items-center gap-2">
+          <Clock3 className="h-4 w-4 text-gray-500" />
           <span>{timeControlLabel}</span>
           {dateLabel ? <span className="ml-2 text-gray-500">· {dateLabel}</span> : null}
         </div>
@@ -973,7 +975,7 @@ export default function ReviewPage() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-24">
+      <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-4 pl-24 md:pl-28">
         <div className="max-w-6xl mx-auto space-y-10">
           {!analysisReady && !analysisLoading && (
             <div className="w-full max-w-3xl mx-auto">

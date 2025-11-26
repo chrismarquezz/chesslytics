@@ -139,7 +139,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 pb-16">
       <Navbar />
-      <div className="max-w-6xl mx-auto px-6 pt-28 space-y-10">
+      <div className="max-w-6xl mx-auto px-6 pt-6 pl-24 md:pl-28 space-y-10">
         <section className="bg-white border border-gray-200 shadow rounded-2xl p-6 flex flex-col gap-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>

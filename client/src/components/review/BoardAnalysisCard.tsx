@@ -88,7 +88,7 @@ export default function BoardAnalysisCard({
         blackClock={blackClock}
         disabled={!engineEnabled}
       />
-      <div className="flex justify-center">
+      <div className="flex justify-center -mt-2">
         <Chessboard
           position={boardPosition}
           boardWidth={boardWidth}

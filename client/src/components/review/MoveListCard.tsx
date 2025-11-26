@@ -51,19 +51,19 @@ export default function MoveListCard({
           <table className="w-full text-sm text-gray-700 table-fixed">
             <thead className="text-xs uppercase tracking-wide text-gray-100 bg-gray-800 sticky top-0 z-10">
               <tr>
-                <th className="py-3 px-2 text-center font-semibold w-12">#</th>
-                <th className="py-3 px-3 text-center font-semibold w-[44%]">White</th>
-                <th className="py-3 px-3 text-center font-semibold w-[44%]">Black</th>
+                <th className="py-3 px-1 text-center font-semibold w-[10%]">#</th>
+                <th className="py-3 px-1 text-center font-semibold w-[30%]">White</th>
+                <th className="py-3 px-1 text-center font-semibold w-[30%]">Black</th>
               </tr>
             </thead>
             <tbody className="bg-gray-50">
               {movePairs.map((pair) => (
                 <tr key={pair.moveNumber} className="border-b border-gray-200 last:border-none">
-                  <td className="py-2 px-2 text-xs font-mono text-gray-500 text-center align-middle whitespace-nowrap">
+                  <td className="py-2 px-1 text-xs font-mono text-gray-500 text-center align-middle whitespace-nowrap">
                     {pair.moveNumber}
                   </td>
-                  <td className="py-1 px-3">{renderButton(pair.white, pair.whiteIndex)}</td>
-                  <td className="py-1 px-3">{renderButton(pair.black, pair.blackIndex)}</td>
+                  <td className="py-1 px-1">{renderButton(pair.white, pair.whiteIndex)}</td>
+                  <td className="py-1 px-1">{renderButton(pair.black, pair.blackIndex)}</td>
                 </tr>
               ))}
             </tbody>

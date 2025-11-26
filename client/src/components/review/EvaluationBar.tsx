@@ -24,11 +24,11 @@ export default function EvaluationBar({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex justify-between text-xs font-semibold text-gray-600">
+      <div className="flex justify-between text-sm font-semibold text-gray-700">
         <span>{whiteLabel}</span>
         <span>{blackLabel}</span>
       </div>
-      <div className="flex justify-between text-[11px] text-gray-600 font-mono">
+      <div className="flex justify-between text-xs text-gray-700 font-mono">
         <span>{formatClock(whiteClock)}</span>
         <span>{formatClock(blackClock)}</span>
       </div>

@@ -4,6 +4,8 @@ import type { Arrow, EngineScore } from "../../types/review";
 import BoardControlButton from "./BoardControlButton";
 import EvaluationBar from "./EvaluationBar";
 
+type PieceRenderMap = Record<string, (props: { squareWidth: number }) => JSX.Element>;
+
 interface BoardAnalysisCardProps {
   boardPosition: string;
   boardWidth: number;
@@ -11,7 +13,7 @@ interface BoardAnalysisCardProps {
   boardColors: { light: string; dark: string };
   lastMove?: { from?: string; to?: string } | null;
   lastMoveColor?: string | null;
-  customPieces?: Record<string, React.ReactNode>;
+  customPieces?: PieceRenderMap;
   evaluationPercent: number;
   currentEvaluationScore: EngineScore | null;
   whiteLabel?: string;

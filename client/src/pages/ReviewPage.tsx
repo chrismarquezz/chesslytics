@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Chess, type Square } from "chess.js";
 import Navbar from "../components/Navbar";
+import { useUser } from "../context/UserContext";
 import GameInputCard from "../components/review/GameInputCard";
 import ThemeSelectorModal from "../components/review/ThemeSelectorModal";
 import BoardAnalysisCard from "../components/review/BoardAnalysisCard";
@@ -413,6 +414,7 @@ export default function ReviewPage() {
             <span className="text-sm font-semibold text-gray-900">{blackLabel}</span>
           </div>
         </div>
+        <div className="h-px bg-gray-200/70" />
         <div className="text-xs text-gray-600 flex items-center gap-2">
           <Clock3 className="h-4 w-4 text-gray-500" />
           <span>{timeControlLabel}</span>
@@ -427,12 +429,20 @@ export default function ReviewPage() {
     () => Array.from(new Set([...(pieceFolders.length ? pieceFolders : ["modern"]), pieceTheme])),
     [pieceFolders, pieceTheme]
   );
+  const { profile, username } = useUser();
   const customPieces = useMemo(
     () =>
       Object.fromEntries(
         ["wP", "wN", "wB", "wR", "wQ", "wK", "bP", "bN", "bB", "bR", "bQ", "bK"].map((code) => [
           code,
-          () => <img src={`/pieces/${pieceTheme}/${code}.svg`} alt={code} className="w-full h-full" />,
+          (props: { squareWidth: number }) => (
+            <img
+              src={`/pieces/${pieceTheme}/${code}.svg`}
+              alt={code}
+              className="w-full h-full"
+              style={{ width: props.squareWidth, height: props.squareWidth }}
+            />
+          ),
         ])
       ),
     [pieceTheme]
@@ -486,7 +496,7 @@ export default function ReviewPage() {
 
   const requestEvaluation = useCallback(
     (move: MoveSnapshot) => {
-      if (!engineEnabled || typeof window === "undefined") return;
+      if (!engineEnabled || isAutoPlaying || typeof window === "undefined") return;
       const url = `${API_BASE_URL}/api/review/evaluate/stream?fen=${encodeURIComponent(move.fen)}&depth=22&lines=${engineLinesCount}`;
       moveEvalSourcesRef.current[move.ply]?.close();
       const source = new EventSource(url);
@@ -547,7 +557,7 @@ export default function ReviewPage() {
         moveEvalSourcesRef.current[move.ply] = null;
       };
     },
-    [API_BASE_URL, engineEnabled, engineLinesCount]
+    [API_BASE_URL, engineEnabled, engineLinesCount, isAutoPlaying]
   );
 
   const resetReviewState = useCallback(() => {
@@ -744,10 +754,10 @@ export default function ReviewPage() {
   }, []);
 
   const handleSelectMove = useCallback(
-    (index: number) => {
+    (index: number, options?: { suppressEval?: boolean }) => {
       if (index < -1 || index > timeline.length - 1) return;
       setCurrentMoveIndex(index);
-      if (index >= 0) {
+      if (index >= 0 && !options?.suppressEval && engineEnabled) {
         const move = timeline[index];
         const state = moveEvaluations[move.ply];
         if (!state || state.status === "error") {
@@ -755,7 +765,7 @@ export default function ReviewPage() {
         }
       }
     },
-    [moveEvaluations, requestEvaluation, timeline]
+    [engineEnabled, moveEvaluations, requestEvaluation, timeline]
   );
 
   const ensureMoveEvaluation = useCallback(
@@ -782,28 +792,24 @@ export default function ReviewPage() {
   }, [currentMoveIndex, ensureMoveEvaluation, engineEnabled, isAutoPlaying, startingSnapshot, timeline]);
 
   useEffect(() => {
-    if (!currentMove || !engineEnabled) return;
+    if (!currentMove || !engineEnabled || isAutoPlaying) return;
     setMoveEvaluations((prev) => ({ ...prev, [currentMove.ply]: { status: "idle" } }));
     requestEvaluation(currentMove);
-  }, [currentMove, engineEnabled, engineLinesCount, requestEvaluation]);
+  }, [currentMove, engineEnabled, engineLinesCount, isAutoPlaying, requestEvaluation]);
 
   useEffect(() => {
-    if (!isAutoPlaying) return;
-    if (!timeline.length) {
-      setIsAutoPlaying(false);
-      return;
-    }
-    const nextIndex =
-      currentMoveIndex < timeline.length - 1 ? currentMoveIndex + 1 : currentMoveIndex === -1 ? 0 : null;
-    if (nextIndex == null) {
-      setIsAutoPlaying(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      handleSelectMove(nextIndex);
+    if (!isAutoPlaying || !timeline.length) return;
+    const interval = window.setInterval(() => {
+      const next =
+        currentMoveIndex < timeline.length - 1 ? currentMoveIndex + 1 : currentMoveIndex === -1 ? 0 : -1;
+      if (next === -1 || next >= timeline.length) {
+        setIsAutoPlaying(false);
+        return;
+      }
+      handleSelectMove(next, { suppressEval: true });
     }, 1000);
-    return () => clearTimeout(timer);
-  }, [handleSelectMove, isAutoPlaying, currentMoveIndex, timeline]);
+    return () => window.clearInterval(interval);
+  }, [currentMoveIndex, handleSelectMove, isAutoPlaying, timeline.length]);
 
   useEffect(() => {
     if (currentMoveIndex < 0) return;
@@ -974,7 +980,11 @@ export default function ReviewPage() {
   const atEnd = currentMoveIndex >= timeline.length - 1;
   return (
     <>
-      <Navbar />
+      <Navbar
+        avatarUrl={profile?.avatar ?? null}
+        username={profile?.username ?? username}
+        onAvatarClick={() => navigate("/")}
+      />
       <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-4 pl-24 md:pl-28">
         <div className="max-w-6xl mx-auto space-y-10">
           {!analysisReady && !analysisLoading && (

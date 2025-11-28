@@ -11,7 +11,7 @@ interface ExplorerBoardCardProps {
   boardWidth: number;
   boardOrientation: "white" | "black";
   boardColors: { light: string; dark: string };
-  customPieces?: Record<string, React.ReactNode>;
+  customPieces?: Record<string, (props: { squareWidth: number }) => JSX.Element>;
   evaluationPercent: number;
   currentEvaluationScore: EngineScore | null;
   bestMoveArrows: Arrow[];

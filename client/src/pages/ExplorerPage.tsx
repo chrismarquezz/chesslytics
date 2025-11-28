@@ -113,7 +113,14 @@ export default function ExplorerPage() {
       Object.fromEntries(
         ["wP", "wN", "wB", "wR", "wQ", "wK", "bP", "bN", "bB", "bR", "bQ", "bK"].map((code) => [
           code,
-          () => <img src={`/pieces/${pieceTheme}/${code}.svg`} alt={code} className="w-full h-full" />,
+          (props: { squareWidth: number }) => (
+            <img
+              src={`/pieces/${pieceTheme}/${code}.svg`}
+              alt={code}
+              className="w-full h-full"
+              style={{ width: props.squareWidth, height: props.squareWidth }}
+            />
+          ),
         ])
       ),
     [pieceTheme]

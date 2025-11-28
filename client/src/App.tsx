@@ -138,30 +138,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 pb-16">
-      <Navbar />
+      <Navbar
+        avatarUrl={profile?.avatar ?? null}
+        username={profile?.username ?? username}
+        onAvatarClick={() => setIsUsernameModalOpen(true)}
+      />
       <div className="max-w-6xl mx-auto px-6 pt-6 pl-24 md:pl-28 space-y-10">
-        <section className="bg-white border border-gray-200 shadow rounded-2xl p-6 flex flex-col gap-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Chess.com profile</h1>
-              <p className="text-gray-500">Set your username to load ratings, stats, and recent games.</p>
-              {username ? (
-                <p className="text-sm text-gray-700 mt-2">
-                  Current username: <span className="font-semibold text-gray-900">{username}</span>
-                </p>
-              ) : (
-                <p className="text-sm text-rose-600 mt-2">No username set yet.</p>
-              )}
-            </div>
-            <button
-              onClick={() => setIsUsernameModalOpen(true)}
-              className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition"
-            >
-              {username ? "Change username" : "Set username"}
-            </button>
+        {userDataError && (
+          <div className="bg-white border border-gray-200 shadow rounded-2xl p-4 text-red-600 text-sm">
+            {userDataError}
           </div>
-          {userDataError && <p className="text-red-600">{userDataError}</p>}
-        </section>
+        )}
 
         {profile && (
           <section className="bg-white border border-gray-200 shadow rounded-2xl p-6 flex flex-col sm:flex-row gap-6 items-center">

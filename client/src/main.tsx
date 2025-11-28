@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { UserProvider } from "./context/UserContext";
 
-import App from "./App"; // Profile page
+import App from "./App"; // Home page
 import ComparePage from "./pages/ComparePage"; // Compare page (future)
 import ReviewPage from "./pages/ReviewPage"; // Game review page
 import ExplorerPage from "./pages/ExplorerPage"; // Free-play explorer

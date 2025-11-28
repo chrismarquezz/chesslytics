@@ -65,7 +65,7 @@ export default function ExplorerPage() {
     return "modern";
   });
   const pieceFolders = useMemo(() => {
-    const glob = import.meta.glob("../../public/pieces/*/wK.svg", { eager: true, as: "url" });
+    const glob = import.meta.glob("/pieces/*/wK.svg", { eager: true, import: "default", query: "?url" });
     const names = Object.keys(glob)
       .map((path) => {
         const parts = path.split("/");

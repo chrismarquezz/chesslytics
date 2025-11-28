@@ -13,12 +13,12 @@ export default function Layout() {
 
         <nav className="flex space-x-6 text-lg">
           <Link
-            to="/profile"
+            to="/"
             className={`${
-              location.pathname === "/profile" ? "text-[#00bfa6]" : "text-gray-700"
+              location.pathname === "/" ? "text-[#00bfa6]" : "text-gray-700"
             } hover:text-[#00bfa6] font-medium transition`}
           >
-            Profile
+            Home
           </Link>
 
           <Link

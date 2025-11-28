@@ -14,35 +14,36 @@ export async function getStats(username: string) {
   return data;
 }
 
-export async function getRecentGames(username: string) {
-  const now = new Date();
-  const thisMonth = now.toISOString().slice(0, 7).split("-");
-  const prevMonth = new Date(now);
-  prevMonth.setMonth(now.getMonth() - 1);
-  const prev = prevMonth.toISOString().slice(0, 7).split("-");
-
-  const urls = [
-    `https://api.chess.com/pub/player/${username}/games/${thisMonth[0]}/${thisMonth[1]}`,
-    `https://api.chess.com/pub/player/${username}/games/${prev[0]}/${prev[1]}`
-  ];
-
+export async function getRecentGames(username: string, archives?: string[], startIndex = 0, limit = 50) {
   try {
-    const responses = await Promise.all(
-      urls.map((url) =>
-        axios.get(url).then((r) => r.data.games || []).catch(() => [])
-      )
-    );
+    let archiveList = archives ?? null;
+    if (!archiveList) {
+      const archivesRes = await axios.get(`https://api.chess.com/pub/player/${username}/games/archives`);
+      archiveList = (archivesRes.data.archives || []).reverse(); // newest first
+    }
+    archiveList = archiveList ?? [];
 
-    // Merge and sort descending by end_time
-    const merged = [...responses[0], ...responses[1]].sort(
-      (a, b) => b.end_time - a.end_time
-    );
+    const collected: any[] = [];
+    let idx = startIndex;
+    while (idx < archiveList.length && collected.length < limit) {
+      const url = archiveList[idx];
+      try {
+        const res = await axios.get(url);
+        const games = res.data.games || [];
+        collected.push(...games);
+      } catch {
+        // skip failing archive
+      }
+      idx += 1;
+    }
 
-    // Limit to last 100 for performance but you can tweak this
-    return merged.slice(0, 100);
+    const sorted = collected.sort((a, b) => (b.end_time ?? 0) - (a.end_time ?? 0)).slice(0, limit);
+    const hasMore = idx < archiveList.length;
+
+    return { games: sorted, hasMore, archives: archiveList ?? [], nextIndex: idx };
   } catch (err) {
     console.error("Error fetching recent games:", err);
-    return [];
+    return { games: [], hasMore: false, archives: archives ?? [], nextIndex: startIndex };
   }
 }
 
@@ -92,4 +93,3 @@ export async function getRatingHistory(username: string, mode: "blitz" | "rapid"
     return [];
   }
 }
-

@@ -14,8 +14,11 @@ interface UserContextType {
   setUsername: (value: string) => void;
   games: any[];
   gamesLoading: boolean;
+  loadMoreLoading: boolean;
   gamesError: string | null;
   refreshGames: () => void;
+  loadMoreGames: () => void;
+  hasMoreGames: boolean;
   profile: any | null;
   stats: any | null;
   trendHistory: TrendHistory;
@@ -37,6 +40,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   });
   const [games, setGames] = useState<any[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
+  const [loadMoreLoading, setLoadMoreLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
@@ -47,6 +51,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   });
   const [userDataLoading, setUserDataLoading] = useState(false);
   const [userDataError, setUserDataError] = useState<string | null>(null);
+  const [hasMoreGames, setHasMoreGames] = useState(false);
+  const [archivesCache, setArchivesCache] = useState<string[] | null>(null);
+  const [archiveIndex, setArchiveIndex] = useState(0);
 
   const persistedSetUsername = useCallback((value: string) => {
     setUsernameState(value);
@@ -70,24 +77,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
           rapid: [],
           bullet: [],
         });
-        setGames([]);
-        setGamesError(null);
-        setUserDataError(null);
-        return false;
-      }
-
-      setUserDataLoading(true);
-      setGamesLoading(true);
-      setUserDataError(null);
+      setGames([]);
       setGamesError(null);
-      try {
-        const [profileData, statsData, blitzHistory, rapidHistory, bulletHistory, gamesData] = await Promise.all([
-          getProfile(target),
+      setUserDataError(null);
+      setHasMoreGames(false);
+      setArchivesCache(null);
+      setArchiveIndex(0);
+      setLoadMoreLoading(false);
+      return false;
+    }
+
+    setUserDataLoading(true);
+    setGamesLoading(true);
+    setLoadMoreLoading(false);
+    setUserDataError(null);
+    setGamesError(null);
+    try {
+      const [profileData, statsData, blitzHistory, rapidHistory, bulletHistory, gamesData] = await Promise.all([
+        getProfile(target),
           getStats(target),
           getRatingHistory(target, "blitz"),
           getRatingHistory(target, "rapid"),
           getRatingHistory(target, "bullet"),
-          getRecentGames(target),
+          getRecentGames(target, undefined, 0, 50),
         ]);
 
         setProfile(profileData);
@@ -97,13 +109,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
           rapid: rapidHistory,
           bullet: bulletHistory,
         });
-        setGames(gamesData);
+        setGames(gamesData.games);
+        setHasMoreGames(gamesData.hasMore ?? false);
+        setArchivesCache(gamesData.archives ?? null);
+        setArchiveIndex(gamesData.nextIndex ?? 0);
         return true;
       } catch (err) {
         console.error("Failed to fetch player data:", err);
         setUserDataError("Account not found. Please check the username.");
         setGames([]);
         setGamesError("Could not load recent games.");
+        setHasMoreGames(false);
+        setArchivesCache(null);
+        setArchiveIndex(0);
         return false;
       } finally {
         setUserDataLoading(false);
@@ -116,6 +134,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const refreshGames = useCallback(() => {
     void fetchUserData(username);
   }, [fetchUserData, username]);
+
+  const loadMoreGames = useCallback(async () => {
+    const target = username.trim();
+    if (!target || !hasMoreGames) return;
+    setLoadMoreLoading(true);
+    setGamesError(null);
+    try {
+      const more = await getRecentGames(target, archivesCache ?? undefined, archiveIndex, 50);
+      const combined = [...games, ...more.games];
+      const deduped = Array.from(new Map(combined.map((g) => [g.url, g])).values()).sort(
+        (a, b) => (b.end_time ?? 0) - (a.end_time ?? 0)
+      );
+      setGames(deduped);
+      setHasMoreGames(more.hasMore ?? false);
+      setArchivesCache(more.archives ?? archivesCache);
+      setArchiveIndex(more.nextIndex ?? archiveIndex);
+    } catch (err) {
+      console.error("Failed to load more games:", err);
+      setGamesError("Could not load more games.");
+    } finally {
+      setLoadMoreLoading(false);
+    }
+  }, [archiveIndex, archivesCache, games, hasMoreGames, username]);
 
   useEffect(() => {
     if (username.trim()) {
@@ -130,8 +171,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setUsername: persistedSetUsername,
         games,
         gamesLoading,
+        loadMoreLoading,
         gamesError,
         refreshGames,
+        loadMoreGames,
+        hasMoreGames,
         profile,
         stats,
         trendHistory,

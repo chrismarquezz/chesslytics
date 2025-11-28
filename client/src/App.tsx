@@ -13,7 +13,10 @@ export default function App() {
     setUsername,
     games,
     gamesLoading,
+    loadMoreLoading,
     gamesError,
+    hasMoreGames,
+    loadMoreGames,
     profile,
     stats,
     userDataLoading,
@@ -23,7 +26,6 @@ export default function App() {
   } = useUser();
   const navigate = useNavigate();
   const [pendingUsername, setPendingUsername] = useState(username);
-  const [visibleGamesCount, setVisibleGamesCount] = useState(20);
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(!username);
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isUsernameSubmitting, setIsUsernameSubmitting] = useState(false);
@@ -33,10 +35,6 @@ export default function App() {
   useEffect(() => {
     setPendingUsername(username);
   }, [username]);
-
-  useEffect(() => {
-    setVisibleGamesCount(20);
-  }, [games]);
 
   useEffect(() => {
     if (!username.trim()) {
@@ -124,10 +122,7 @@ export default function App() {
     });
   }, [games, gameSearch, username]);
 
-  const displayedGames = useMemo(
-    () => filteredGames.slice(0, visibleGamesCount),
-    [filteredGames, visibleGamesCount]
-  );
+  const displayedGames = filteredGames;
 
   const ratingChips = [
     { label: "Bullet", value: stats?.chess_bullet?.last?.rating ?? null },
@@ -135,15 +130,61 @@ export default function App() {
     { label: "Rapid", value: stats?.chess_rapid?.last?.rating ?? null },
   ];
   const canDismissUsernameModal = Boolean(username);
+  const isInitialLoading = gamesLoading && games.length === 0;
+
+  type AggregatedStats = {
+    totalGames: number;
+    winRate: number | null;
+    bestFormat: { label: string; rating: number | null } | null;
+  };
+
+  const aggregatedStats = useMemo<AggregatedStats>(() => {
+    const modes = [
+      { key: "chess_bullet", label: "Bullet" },
+      { key: "chess_blitz", label: "Blitz" },
+      { key: "chess_rapid", label: "Rapid" },
+      { key: "chess_daily", label: "Daily" },
+    ] as const;
+
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+    let bestFormat: { label: string; rating: number | null } | null = null;
+
+    modes.forEach((m) => {
+      const record = (stats as any)?.[m.key]?.record;
+      wins += record?.win ?? 0;
+      losses += record?.loss ?? 0;
+      draws += record?.draw ?? 0;
+
+      const rating = (stats as any)?.[m.key]?.last?.rating ?? null;
+      if (rating != null) {
+        if (!bestFormat || rating > (bestFormat.rating ?? -Infinity)) {
+          bestFormat = { label: m.label, rating };
+        }
+      }
+    });
+
+    const total = wins + losses + draws;
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : null;
+
+    return {
+      totalGames: total,
+      winRate,
+      bestFormat,
+    };
+  }, [stats]);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 pb-16">
+    <div className="min-h-screen bg-gray-50 text-gray-800 pb-16 pt-8">
+      <div className="fixed top-0 left-0 right-0 h-8 bg-[#00bfa6] z-40" />
       <Navbar
         avatarUrl={profile?.avatar ?? null}
         username={profile?.username ?? username}
         onAvatarClick={() => setIsUsernameModalOpen(true)}
+        belowTopBar
       />
-      <div className="max-w-6xl mx-auto px-6 pt-6 pl-24 md:pl-28 space-y-10">
+      <div className="max-w-7xl mx-auto px-6 pt-10 pl-24 md:pl-28 space-y-20">
         {userDataError && (
           <div className="bg-white border border-gray-200 shadow rounded-2xl p-4 text-red-600 text-sm">
             {userDataError}
@@ -151,38 +192,63 @@ export default function App() {
         )}
 
         {profile && (
-          <section className="bg-white border border-gray-200 shadow rounded-2xl p-6 flex flex-col sm:flex-row gap-6 items-center">
-            <div className="flex flex-col items-center text-center">
+          <section className="flex flex-col gap-4">
+            <div className="flex items-center gap-5">
               {profile.avatar ? (
-                <img src={profile.avatar} alt={`${profile.username} avatar`} className="w-28 h-28 rounded-full shadow" />
+                <img src={profile.avatar} alt={`${profile.username} avatar`} className="w-28 h-28 border border-gray-200 object-cover" />
               ) : (
-                <div className="w-28 h-28 rounded-full bg-gray-200 flex items-center justify-center text-2xl font-semibold text-gray-500">
-              {profile.username?.charAt(0)?.toUpperCase() ?? "W"}
+                <div className="w-28 h-28 border border-gray-200 bg-gray-100 flex items-center justify-center text-3xl font-semibold text-gray-600">
+                  {profile.username?.charAt(0)?.toUpperCase() ?? "W"}
                 </div>
               )}
+              <div className="flex flex-col">
+                <h2 className="text-3xl font-bold text-gray-900">{profile.name || profile.username}</h2>
+                {profile.username && <p className="text-base text-gray-600">@{profile.username}</p>}
+              </div>
             </div>
-            <div className="flex-1">
-              <h2 className="text-2xl font-semibold text-gray-900">{profile.username}</h2>
-              {profile.name && <p className="text-gray-500">{profile.name}</p>}
-              <div className="flex flex-wrap gap-3 mt-4">
-                {ratingChips.map((chip) => (
-                  <div key={chip.label} className="bg-gray-100 border border-gray-200 rounded-xl px-4 py-2 text-center min-w-[100px]">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">{chip.label}</p>
-                    <p className="text-lg font-semibold text-gray-900">{chip.value ?? "—"}</p>
+            <div className="flex flex-wrap gap-6 text-gray-900 text-base">
+              {ratingChips.map((chip) => (
+                <div key={chip.label} className="flex items-center gap-2">
+                  <span className="uppercase text-sm tracking-wide text-gray-500">{chip.label}</span>
+                  <span className="font-semibold text-lg px-2 py-1 rounded-md bg-gray-200/80">
+                    {chip.value ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {aggregatedStats.totalGames > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
+                {[
+                  {
+                    title: "Win rate",
+                    value: aggregatedStats.winRate != null ? `${aggregatedStats.winRate}%` : "—",
+                  },
+                  {
+                    title: "Total games",
+                    value: aggregatedStats.totalGames.toLocaleString(),
+                  },
+                  {
+                    title: "Best format",
+                    value: aggregatedStats.bestFormat?.label ?? "—",
+                  },
+                ].map((card) => (
+                  <div
+                    key={card.title}
+                    className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center text-center"
+                  >
+                    <p className="text-xs uppercase tracking-wide text-gray-500">{card.title}</p>
+                    <p className="text-2xl font-bold text-[#00bfa6] mt-2">{card.value}</p>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </section>
         )}
 
-        <section className="bg-white border border-gray-200 shadow rounded-2xl p-6">
+        <section className="bg-white border border-gray-200 shadow rounded-2xl p-6 mt-10">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
             <div>
-              <h3 className="text-2xl font-semibold text-gray-900">Recent Games</h3>
-              <p className="text-sm text-gray-500">
-                Showing {displayedGames.length} of {filteredGames.length} games
-              </p>
+              <h3 className="text-2xl font-semibold text-gray-900">Analyze your games</h3>
             </div>
             <div className="flex items-center gap-3 flex-wrap justify-between md:justify-end">
               {gamesError && <p className="text-sm text-red-500">{gamesError}</p>}
@@ -212,7 +278,7 @@ export default function App() {
             </div>
           </div>
 
-          {gamesLoading ? (
+          {isInitialLoading ? (
             <p className="text-center text-gray-500 py-10">Loading games…</p>
           ) : displayedGames.length === 0 ? (
             <p className="text-center text-gray-500 py-10">
@@ -222,7 +288,7 @@ export default function App() {
             </p>
           ) : (
             <>
-              <div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-8 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                 {displayedGames.map((game) => {
                   const {
                     badgeClass,
@@ -236,7 +302,7 @@ export default function App() {
                   const openingTag = getOpeningFromPgn(game.pgn);
                   const openingLabel = formatOpeningLabel(openingTag || game.opening || game.eco);
                   return (
-                    <div key={game.url} className="border border-gray-200 rounded-xl p-4 shadow-sm bg-white flex flex-col gap-4">
+                    <div key={game.url} className="border border-gray-200 rounded-xl p-5 shadow-sm bg-white flex flex-col gap-4">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">{timeShortLabel}</span>
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badgeClass}`}>{resultLabel}</span>
@@ -272,13 +338,14 @@ export default function App() {
                   );
                 })}
               </div>
-              {visibleGamesCount < games.length && (
+              {hasMoreGames && (
                 <div className="text-center mt-6">
                   <button
-                    onClick={() => setVisibleGamesCount((prev) => Math.min(prev + 20, games.length))}
-                    className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition"
+                    onClick={() => loadMoreGames()}
+                    disabled={loadMoreLoading}
+                    className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition disabled:opacity-60"
                   >
-                    Load More
+                    {loadMoreLoading ? "Loading…" : "Load More"}
                   </button>
                 </div>
               )}

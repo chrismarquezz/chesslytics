@@ -158,6 +158,9 @@ export default function PuzzleTrainerPage() {
   const [attemptedWrong, setAttemptedWrong] = useState(false);
   const [puzzleResults, setPuzzleResults] = useState<Array<boolean | null>>([]);
   const prevPuzzleCountRef = useRef(0);
+  const [liveEvaluation, setLiveEvaluation] = useState<EngineEvaluation | null>(null);
+  const [engineStatus, setEngineStatus] = useState<"idle" | "loading" | "error" | "success">("idle");
+  const evalSourceRef = useRef<EventSource | null>(null);
   const wrongTimeoutRef = useRef<number | null>(null);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const pieceFolders = useMemo(() => {
@@ -386,6 +389,12 @@ export default function PuzzleTrainerPage() {
       setWrongSquare(null);
       setCorrectSquare(null);
       setAttemptedWrong(false);
+      setLiveEvaluation(null);
+      setEngineStatus("idle");
+      if (evalSourceRef.current) {
+        evalSourceRef.current.close();
+        evalSourceRef.current = null;
+      }
       if (wrongTimeoutRef.current) {
         window.clearTimeout(wrongTimeoutRef.current);
         wrongTimeoutRef.current = null;
@@ -406,33 +415,33 @@ export default function PuzzleTrainerPage() {
       if (bestBase === moveBase || best === moveUci) {
         setSolved(true);
         setStatusMessage("Correct! You found the best move.");
+        setBoardPosition(chess.fen());
+        setCorrectSquare(targetSquare);
+        setWrongSquare(null);
+        setPuzzleResults((prev) => {
+          const next = [...prev];
+          next[currentIndex] = !attemptedWrong;
+          return next;
+        });
+        if (wrongTimeoutRef.current) {
+          window.clearTimeout(wrongTimeoutRef.current);
+          wrongTimeoutRef.current = null;
+        }
+        return true;
+      }
       setBoardPosition(chess.fen());
-      setCorrectSquare(targetSquare);
-      setWrongSquare(null);
+      setWrongSquare(targetSquare);
       setPuzzleResults((prev) => {
         const next = [...prev];
-        next[currentIndex] = !attemptedWrong;
+        if (next[currentIndex] === null) {
+          next[currentIndex] = false;
+        }
         return next;
       });
+      setAttemptedWrong(true);
       if (wrongTimeoutRef.current) {
         window.clearTimeout(wrongTimeoutRef.current);
-        wrongTimeoutRef.current = null;
       }
-      return true;
-    }
-    setBoardPosition(chess.fen());
-    setWrongSquare(targetSquare);
-    setPuzzleResults((prev) => {
-      const next = [...prev];
-      if (next[currentIndex] === null) {
-        next[currentIndex] = false;
-      }
-      return next;
-    });
-    setAttemptedWrong(true);
-    if (wrongTimeoutRef.current) {
-      window.clearTimeout(wrongTimeoutRef.current);
-    }
       wrongTimeoutRef.current = window.setTimeout(() => {
         setBoardPosition(currentPuzzle.fen);
         setWrongSquare(null);
@@ -529,7 +538,9 @@ export default function PuzzleTrainerPage() {
   }, [currentPuzzle, solutionShown, solved, wrongSquare]);
 
   const orientation = currentPuzzle?.mover === "black" ? "black" : "white";
-  const evalPercent = currentPuzzle?.score ? getEvalPercent(currentPuzzle.score, getMateWinner(currentPuzzle.score, currentPuzzle.fen)) : 0.5;
+  const activeEvaluationScore = liveEvaluation?.score ?? currentPuzzle?.score ?? null;
+  const activeEvalMateWinner = activeEvaluationScore ? getMateWinner(activeEvaluationScore, boardPosition) : undefined;
+  const evalPercent = activeEvaluationScore ? getEvalPercent(activeEvaluationScore, activeEvalMateWinner) : 0.5;
   const moverLabel = currentPuzzle?.mover ? `${currentPuzzle.mover.charAt(0).toUpperCase()}${currentPuzzle.mover.slice(1)}` : "Side";
   const boardColors = BOARD_THEMES[boardTheme] ?? BOARD_THEMES.modern;
   useEffect(() => {
@@ -560,6 +571,48 @@ export default function PuzzleTrainerPage() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  useEffect(() => {
+    if (!boardPosition) return;
+    if (evalSourceRef.current) {
+      evalSourceRef.current.close();
+      evalSourceRef.current = null;
+    }
+    setEngineStatus("loading");
+    const url = `${API_BASE_URL}/api/review/evaluate/stream?fen=${encodeURIComponent(boardPosition)}&depth=22&lines=${engineLinesCount}`;
+    const source = new EventSource(url);
+    evalSourceRef.current = source;
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as { evaluation?: EngineEvaluation; done?: boolean; error?: string };
+        if (payload.error) {
+          setEngineStatus("error");
+          source.close();
+          evalSourceRef.current = null;
+          return;
+        }
+        if (payload.evaluation) {
+          setLiveEvaluation(payload.evaluation);
+          setEngineStatus("success");
+        }
+        if (payload.done) {
+          source.close();
+          evalSourceRef.current = null;
+        }
+      } catch {
+        // ignore malformed
+      }
+    };
+    source.onerror = () => {
+      setEngineStatus("error");
+      source.close();
+      evalSourceRef.current = null;
+    };
+    return () => {
+      source.close();
+      evalSourceRef.current = null;
+    };
+  }, [API_BASE_URL, boardPosition, engineLinesCount]);
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 pb-12">
       <div className="fixed top-0 left-0 right-0 h-8 bg-[#00bfa6] z-40" />
@@ -583,7 +636,7 @@ export default function PuzzleTrainerPage() {
                   <div style={{ width: `${boardWidth}px` }}>
                     <EvaluationBar
                       evaluationPercent={evalPercent}
-                      currentEvaluationScore={currentPuzzle?.score ?? null}
+                      currentEvaluationScore={activeEvaluationScore}
                       whiteLabel=""
                       blackLabel=""
                       disabled={!solved}
@@ -699,22 +752,22 @@ export default function PuzzleTrainerPage() {
                     <div className="h-px bg-gray-200/70 mt-2 mb-2" />
                     <p className="text-2xl font-bold text-[#00bfa6] mt-4 text-center">{currentPuzzle.timeSpentLabel}</p>
                   </div>
-                  <div className="bg-white rounded-2xl border border-gray-200 shadow p-4 flex flex-col gap-3">
-                    <div className="flex items-center justify-between text-sm font-semibold text-gray-900">
-                      <span>Progress</span>
-                      <span className="text-[#00bfa6]">
-                        {puzzleResults.filter((r) => r !== null).length}/{puzzles.length}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-6 gap-2 max-h-32 overflow-y-auto pr-1">
-                      {puzzleResults.map((res, idx) => (
-                        <div
-                          key={idx}
-                          className={`h-6 rounded ${res === null ? "bg-gray-100 border border-dashed border-gray-200" : res ? "bg-[#00bfa6]" : "bg-red-500"}`}
-                          title={`Puzzle ${idx + 1}`}
-                        />
-                      ))}
-                    </div>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-200 shadow p-4 flex flex-col gap-3 sm:col-span-2">
+                  <div className="flex items-center justify-between text-sm font-semibold text-gray-900">
+                    <span>Progress</span>
+                    <span className="text-[#00bfa6]">
+                      {puzzleResults.filter((r) => r !== null).length}/{puzzles.length}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-10 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                    {puzzleResults.map((res, idx) => (
+                      <div
+                        key={idx}
+                        className={`aspect-square rounded ${res === null ? "bg-gray-100 border border-dashed border-gray-200" : res ? "bg-[#00bfa6]" : "bg-red-500"}`}
+                        title={`Puzzle ${idx + 1}`}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>

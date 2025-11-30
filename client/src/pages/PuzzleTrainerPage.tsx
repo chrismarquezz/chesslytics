@@ -157,12 +157,12 @@ export default function PuzzleTrainerPage() {
   const [hintShown, setHintShown] = useState(false);
   const [solutionShown, setSolutionShown] = useState(false);
   const [solved, setSolved] = useState(false);
+  const [attemptedWrong, setAttemptedWrong] = useState(false);
   const [boardWidth, setBoardWidth] = useState(820);
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
   const [, setStatusMessage] = useState<string>("");
   const [wrongSquare, setWrongSquare] = useState<string | null>(null);
   const [correctSquare, setCorrectSquare] = useState<string | null>(null);
-  const [attemptedWrong, setAttemptedWrong] = useState(false);
   const [puzzleResults, setPuzzleResults] = useState<Array<boolean | null>>([]);
   const prevPuzzleCountRef = useRef(0);
   const [liveEvaluation, setLiveEvaluation] = useState<EngineEvaluation | null>(null);
@@ -171,6 +171,7 @@ export default function PuzzleTrainerPage() {
   const wrongTimeoutRef = useRef<number | null>(null);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [hydratedFromCache, setHydratedFromCache] = useState(false);
+  const [solvedFen, setSolvedFen] = useState<string | null>(null);
   const pieceAssets = useMemo(() => {
     const glob = import.meta.glob("../assets/pieces/*/*.svg", { eager: true, import: "default" });
     const map: Record<string, Record<string, string>> = {};
@@ -462,6 +463,7 @@ export default function PuzzleTrainerPage() {
       setWrongSquare(null);
       setCorrectSquare(null);
       setAttemptedWrong(false);
+      setSolvedFen(null);
       setLiveEvaluation(null);
       setEngineStatus("idle");
       if (evalSourceRef.current) {
@@ -477,7 +479,7 @@ export default function PuzzleTrainerPage() {
 
   const handleMove = useCallback(
     (sourceSquare: string, targetSquare: string) => {
-      if (!currentPuzzle || solved) return false;
+      if (!currentPuzzle || (solved)) return false;
       const chess = new Chess(boardPosition);
       const result = chess.move({ from: sourceSquare as any, to: targetSquare as any, promotion: "q" });
       if (!result) return false;
@@ -490,6 +492,7 @@ export default function PuzzleTrainerPage() {
         setStatusMessage("Correct! You found the best move.");
         setBoardPosition(chess.fen());
         setCorrectSquare(targetSquare);
+        setSolvedFen(chess.fen());
         setWrongSquare(null);
         setPuzzleResults((prev) => {
           const next = [...prev];
@@ -528,7 +531,7 @@ export default function PuzzleTrainerPage() {
 
   const handleSquareClick = useCallback(
     (square: string) => {
-      if (!currentPuzzle || solved) return;
+      if (!currentPuzzle || (solved)) return;
       setStatusMessage("");
       const chess = new Chess(boardPosition);
       const piece = chess.get(square as Square);
@@ -566,11 +569,12 @@ export default function PuzzleTrainerPage() {
 
   const handleSquareDrop = useCallback(
     (from: string, to: string) => {
+      if (solved) return false;
       const moved = handleMove(from, to);
       if (moved) setSelectedSquare(null);
       return moved;
     },
-    [handleMove]
+    [handleMove, solved]
   );
 
   const customSquareStyles = useMemo(() => {
@@ -725,20 +729,22 @@ export default function PuzzleTrainerPage() {
                       disabledMessage={`${moverLabel} to move`}
                     />
                   </div>
-                  <Chessboard
-                    position={boardPosition}
-                    boardOrientation={orientation}
-                    arePiecesDraggable
-                    onPieceDrop={handleSquareDrop}
-                    onSquareClick={handleSquareClick}
-                 customBoardStyle={{ borderRadius: 0 }}
-                    customSquareStyles={customSquareStyles}
-                    customDarkSquareStyle={{ backgroundColor: boardColors.dark }}
-                    customLightSquareStyle={{ backgroundColor: boardColors.light }}
-                    customArrows={solutionArrows}
-                    customPieces={customPieces}
-                    boardWidth={boardWidth}
-                  />
+                  <div style={{ pointerEvents: solved ? "none" : "auto" }}>
+                    <Chessboard
+                      position={boardPosition}
+                      boardOrientation={orientation}
+                      arePiecesDraggable={!solved}
+                      onPieceDrop={!solved ? handleSquareDrop : undefined}
+                      onSquareClick={!solved ? handleSquareClick : undefined}
+                      customBoardStyle={{ borderRadius: 0 }}
+                      customSquareStyles={customSquareStyles}
+                      customDarkSquareStyle={{ backgroundColor: boardColors.dark }}
+                      customLightSquareStyle={{ backgroundColor: boardColors.light }}
+                      customArrows={solutionArrows}
+                      customPieces={customPieces}
+                      boardWidth={boardWidth}
+                    />
+                  </div>
                 </div>
                 <div className="flex justify-between items-end mt-0" style={{ width: `${boardWidth}px` }}>
                   <div className="relative group/settings">
@@ -904,7 +910,6 @@ export default function PuzzleTrainerPage() {
           if (typeof window !== "undefined") {
             window.localStorage.setItem("chesslab-theme", key);
           }
-          setIsThemeModalOpen(false);
         }}
         pvCount={engineLinesCount}
         onChangePvCount={(value) => setEngineLinesCount(value)}

@@ -1261,7 +1261,6 @@ export default function ReviewPage() {
         selectedKey={boardTheme}
         onSelect={(key) => {
           setBoardTheme(key as BoardThemeKey);
-          setIsThemeModalOpen(false);
         }}
         pvCount={engineLinesCount}
         onChangePvCount={(value) => setEngineLinesCount(value)}

@@ -52,6 +52,9 @@ type Puzzle = {
   playedScore: EngineScore | null;
 };
 
+const getPuzzleCacheKey = (username?: string | null) =>
+  username ? `puzzles:${username.toLowerCase().trim()}` : null;
+
 function parseClockToSeconds(clock?: string | null): number | null {
   if (!clock) return null;
   const parts = clock.split(":").map((p) => Number(p));
@@ -164,6 +167,7 @@ export default function PuzzleTrainerPage() {
   const evalSourceRef = useRef<EventSource | null>(null);
   const wrongTimeoutRef = useRef<number | null>(null);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [hydratedFromCache, setHydratedFromCache] = useState(false);
   const pieceFolders = useMemo(() => {
     const glob = import.meta.glob("/pieces/*/wK.svg", { eager: true, import: "default", query: "?url" });
     const names = Object.keys(glob)
@@ -337,15 +341,26 @@ export default function PuzzleTrainerPage() {
         }
       }
 
-      setPuzzles(allPuzzles.slice());
-      setCurrentIndex(0);
-      if (allPuzzles.length) {
+      setPuzzles((prev) => {
+        const seen = new Set(prev.map((p) => `${p.fen}-${p.moveNumber}-${p.playedMove}`));
+        const merged = [...prev];
+        allPuzzles.forEach((p) => {
+          const key = `${p.fen}-${p.moveNumber}-${p.playedMove}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(p);
+          }
+        });
+        return merged;
+      });
+      setCurrentIndex((prev) => (prev < 0 && allPuzzles.length ? 0 : prev));
+      if (!puzzles.length && allPuzzles.length) {
         setBoardPosition(allPuzzles[0].fen);
+        setHintShown(false);
+        setSolutionShown(false);
+        setSolved(false);
+        setStatusMessage("");
       }
-      setHintShown(false);
-      setSolutionShown(false);
-      setSolved(false);
-      setStatusMessage("");
       setLoading(false);
 
       (async () => {
@@ -363,11 +378,47 @@ export default function PuzzleTrainerPage() {
       setError(err instanceof Error ? err.message : "Could not load puzzles");
       setLoading(false);
     }
-  }, [games, username]);
+  }, [games, puzzles.length, username]);
 
   useEffect(() => {
-    void loadPuzzles();
-  }, [loadPuzzles]);
+    if (hydratedFromCache) {
+      void loadPuzzles();
+    }
+  }, [hydratedFromCache, loadPuzzles]);
+
+  useEffect(() => {
+    const key = getPuzzleCacheKey(username);
+    if (!key || puzzles.length === 0) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(puzzles));
+    } catch {
+      // ignore storage errors
+    }
+  }, [puzzles, username]);
+
+  useEffect(() => {
+    const key = getPuzzleCacheKey(username);
+    if (!key) {
+      setHydratedFromCache(true);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const cached = JSON.parse(raw) as Puzzle[];
+        if (Array.isArray(cached) && cached.length) {
+          setPuzzles(cached);
+          setCurrentIndex(0);
+          setBoardPosition(cached[0].fen);
+          setPuzzleResults(Array(cached.length).fill(null));
+        }
+      }
+    } catch {
+      // ignore parse/storage errors
+    } finally {
+      setHydratedFromCache(true);
+    }
+  }, [username]);
 
   useEffect(() => {
     setPuzzleResults((prev) => {

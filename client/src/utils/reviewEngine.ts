@@ -76,7 +76,8 @@ export function buildTimelineFromPgn(pgn: string): MoveSnapshot[] {
 export function formatScore(score: EngineScore | null) {
   if (!score) return "—";
   if (score.type === "mate") {
-    return `M${Math.abs(score.value)}`;
+    const mateMoves = Math.abs(score.value);
+    return mateMoves === 0 ? "Checkmate" : `M${mateMoves}`;
   }
   const value = (score.value / 100).toFixed(2);
   return value.startsWith("-") ? value : `+${value}`;

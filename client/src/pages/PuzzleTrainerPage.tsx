@@ -157,6 +157,7 @@ export default function PuzzleTrainerPage() {
   const [correctSquare, setCorrectSquare] = useState<string | null>(null);
   const [attemptedWrong, setAttemptedWrong] = useState(false);
   const [puzzleResults, setPuzzleResults] = useState<Array<boolean | null>>([]);
+  const prevPuzzleCountRef = useRef(0);
   const wrongTimeoutRef = useRef<number | null>(null);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const pieceFolders = useMemo(() => {
@@ -365,7 +366,15 @@ export default function PuzzleTrainerPage() {
       while (next.length < puzzles.length) next.push(null);
       return next;
     });
-  }, [puzzles.length]);
+    const prevCount = prevPuzzleCountRef.current;
+    if (puzzles.length > prevCount) {
+      const wasAtEnd = currentIndex === prevCount - 1;
+      if (wasAtEnd && solved) {
+        setCurrentIndex(prevCount); // jump to first newly added puzzle
+      }
+    }
+    prevPuzzleCountRef.current = puzzles.length;
+  }, [currentIndex, puzzles.length, solved]);
 
   useEffect(() => {
     if (currentPuzzle) {
@@ -606,7 +615,7 @@ export default function PuzzleTrainerPage() {
                       <Settings className="h-5 w-5" />
                     </button>
                     <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-9 px-2 py-1 text-xs font-semibold text-white bg-gray-900 rounded-md opacity-0 group-hover/settings:opacity-90 transition-opacity text-center whitespace-nowrap shadow">
-                      Settings (S)
+                      Settings
                     </span>
                   </div>
                   <button
